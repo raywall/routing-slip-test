@@ -49,7 +49,7 @@ func main() {
 
 func consumeKafka(ctx context.Context) {
 	brokers := splitEnv("ACL_KAFKA_BROKERS")
-	topic := env("ACL_KAFKA_TOPIC", "")
+	topic := env("ACL_KAFKA_TOPIC", "desconto-realizado")
 	if len(brokers) == 0 || topic == "" {
 		return
 	}

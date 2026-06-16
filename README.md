@@ -5,6 +5,7 @@ Laboratorio Docker para validar o uso integrado de:
 - `custom-business-metrics/service` como service ECS simulado no Docker, porta `8080`;
 - `go-graphql-connector` como ACL GraphQL em service ECS simulado no Docker, porta `8090`;
 - `custom-business-metrics/webview` como service ECS simulado no Docker, porta `4200`;
+- `sample-test/service/cmd/mcp` como endpoint MCP do fluxo principal, porta `9091`;
 - `sample-test/product` como worker ECS simulado consumindo SQS, portas `8087` e `9094` para health e MCP;
 - `sample-test/agent` como agent ECS simulado para explicabilidade usando MCP, porta `8095`;
 - `routing-slip-pattern` como Lambda em container Docker, porta `8088`;
@@ -30,15 +31,19 @@ product-service:8087
   -> LocalStack DynamoDB routing-slip-state
   -> expõe MCP em :9094/mcp
 
+service-mcp:9091
+  -> usa o mesmo workflow e o mesmo state store do service principal
+  -> expõe MCP em :9091/mcp
+
 agent-service:8095
-  -> consulta MCP do product-service
+  -> consulta MCP do service-mcp e do product-service
   -> responde perguntas sobre o processamento
 
 SNS sample-test-routing-events
   -> SQS sample-test-convenio-133341  filtro data.codigo_identificacao_convenio = 133341
   -> SQS sample-test-convenio-outros  filtro anything-but 133341
 
-Kafka sample-test-acl-events -> acl-service consumer group sample-test-acl
+Kafka desconto-realizado -> acl-service consumer group sample-test-acl
 ```
 
 ## Executar
@@ -65,6 +70,7 @@ URLs principais:
 Metrics API: http://localhost:8080
 GraphQL ACL: http://localhost:8090/graphql
 Webview:     http://localhost:4200
+Service MCP: http://localhost:9091/mcp
 Product:     http://localhost:8087/health
 Product MCP: http://localhost:9094/mcp
 Agent:       http://localhost:8095
@@ -108,7 +114,7 @@ make queues
 make produce-kafka
 ```
 
-O ACL consome o topico `sample-test-acl-events` com o group id `sample-test-acl` e registra os eventos em log. O consumo é propositalmente simples neste laboratorio: ele valida conectividade e consumo do canal de eventos sem alterar o comportamento GraphQL.
+O ACL consome o topico `desconto-realizado` com o group id `sample-test-acl` e registra os eventos em log. O consumo é propositalmente simples neste laboratorio: ele valida conectividade e consumo do canal de eventos sem alterar o comportamento GraphQL.
 
 ## Explicabilidade com MCP
 
@@ -118,7 +124,7 @@ Depois de publicar um evento no SNS e deixar o `product-service` processar a fil
 make explain CORRELATION_ID=corr-baixa-parcelas-001
 ```
 
-O agent consulta o MCP do `product-service`, recupera workflow, regras de negócio e snapshots de execução e devolve uma resposta pronta para leitura humana.
+O agent consulta por padrão todos os MCP servers do fluxo, hoje `service-mcp` e `product-service`, recupera workflow, regras de negócio e snapshots de execução e devolve uma resposta consolidada pronta para leitura humana.
 
 Por padrão o `agent-service` usa um modo determinístico local. Se quiser testar com um modelo pequeno em um servidor compatível com Ollama:
 

@@ -2,7 +2,7 @@
 set -eu
 
 BOOTSTRAP="${KAFKA_BOOTSTRAP:-localhost:9092}"
-TOPIC="${ACL_KAFKA_TOPIC:-sample-test-acl-events}"
+TOPIC="${ACL_KAFKA_TOPIC:-desconto-realizado}"
 
 until /opt/kafka/bin/kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list >/dev/null 2>&1; do
   sleep 1

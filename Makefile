@@ -7,7 +7,7 @@ AWS_REGION ?= us-east-1
 
 LAMBDA_URL ?= http://localhost:8088/2015-03-31/functions/function/invocations
 SNS_TOPIC_NAME ?= sample-test-routing-events
-KAFKA_TOPIC ?= sample-test-acl-events
+KAFKA_TOPIC ?= desconto-realizado
 KAFKA_BOOTSTRAP_HOST ?= localhost:29092
 PAYLOAD ?= payload.json
 
@@ -36,25 +36,26 @@ prepare:
 	@$(COMPOSE) exec -T kafka /bin/sh /scripts/kafka-init.sh
 
 build:
-	@$(COMPOSE) build metrics-service acl-service product-service agent-service routing-slip-lambda
+	@$(COMPOSE) build metrics-service acl-service service-mcp product-service agent-service routing-slip-lambda
 
 test:
 	@cd metrics && GOWORK=off go test ./... && GOWORK=off go vet ./...
 	@cd acl && GOWORK=off go test ./... && GOWORK=off go vet ./...
+	@cd service && GOWORK=off go test ./... && GOWORK=off go vet ./...
 	@cd product && GOWORK=off go test ./... && GOWORK=off go vet ./...
 	@cd agent && GOWORK=off go test ./... && GOWORK=off go vet ./...
-	@cd service && GOWORK=off go test ./... && GOWORK=off go vet ./...
 	@$(COMPOSE) config >/dev/null
 
 start: prepare
 	@EXTERNAL_API_URL="$(EXTERNAL_API_URL)" EXTERNAL_API_SERIAL="$(EXTERNAL_API_SERIAL)" \
-		$(COMPOSE) up -d --build --wait metrics-service acl-service metrics-webview product-service agent-service routing-slip-lambda
+		$(COMPOSE) up -d --build --wait metrics-service acl-service metrics-webview service-mcp product-service agent-service routing-slip-lambda
 	@$(MAKE) health
 
 health:
 	@curl --fail --silent http://localhost:8080/health >/dev/null && echo "metrics ECS: ok"
 	@curl --fail --silent http://localhost:8090/graphql >/dev/null && echo "acl ECS:     ok"
 	@curl --fail --silent http://localhost:4200 >/dev/null && echo "webview ECS: ok"
+	@curl --fail --silent http://localhost:9091/health >/dev/null && echo "service MCP: ok"
 	@curl --fail --silent http://localhost:8087/health >/dev/null && echo "product ECS: ok"
 	@curl --fail --silent http://localhost:8095/health >/dev/null && echo "agent ECS:   ok"
 	@code=$$(curl --silent --output /dev/null --write-out '%{http_code}' "$(LAMBDA_URL)" -H 'content-type: application/json' --data '{}' || true); \
@@ -96,7 +97,7 @@ explain:
 		--data '{"target":"product","correlation_id":"$(CORRELATION_ID)","question":"O que aconteceu com este processamento e em que etapa ele terminou?"}'
 
 logs:
-	@$(COMPOSE) logs -f localstack kafka metrics-service acl-service metrics-webview product-service agent-service routing-slip-lambda
+	@$(COMPOSE) logs -f localstack kafka metrics-service acl-service metrics-webview service-mcp product-service agent-service routing-slip-lambda
 
 stop:
 	@$(COMPOSE) down --remove-orphans

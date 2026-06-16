@@ -28,12 +28,9 @@ type explainRequest struct {
 }
 
 type explainResponse struct {
-	Target         string         `json:"target"`
-	MCPURL         string         `json:"mcp_url"`
-	Workflow       any            `json:"workflow"`
-	BusinessRules  any            `json:"business_rules"`
-	Execution      any            `json:"execution,omitempty"`
-	Executions     any            `json:"executions,omitempty"`
+	Target         string          `json:"target"`
+	Targets        []string        `json:"targets"`
+	Sources        []explainSource `json:"sources"`
 	Explanation    string         `json:"explanation"`
 	ReasoningStyle string         `json:"reasoning_style"`
 	Question       string         `json:"question"`
@@ -41,6 +38,16 @@ type explainResponse struct {
 	Model          string         `json:"model"`
 	Provider       string         `json:"provider"`
 	GeneratedAt    string         `json:"generated_at"`
+}
+
+type explainSource struct {
+	Target        string `json:"target"`
+	MCPURL        string `json:"mcp_url"`
+	Workflow      any    `json:"workflow,omitempty"`
+	BusinessRules any    `json:"business_rules,omitempty"`
+	Execution     any    `json:"execution,omitempty"`
+	Executions    any    `json:"executions,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 type mcpClient struct {
@@ -115,53 +122,70 @@ func routes(logger *slog.Logger) http.Handler {
 }
 
 func explain(ctx context.Context, input explainRequest, logger *slog.Logger) (*explainResponse, error) {
-	baseURL, target := resolveTarget(input)
-	if baseURL == "" {
+	targets, targetLabel := resolveTargets(input)
+	if len(targets) == 0 {
 		return nil, fmt.Errorf("mcp target not configured")
 	}
-	client := &mcpClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey:  env("AGENT_MCP_API_KEY", ""),
-		client: &http.Client{
-			Timeout: parseDurationEnv("AGENT_REQUEST_TIMEOUT", 12*time.Second),
-		},
-	}
-
-	workflow, err := client.callTool(ctx, "explain_workflow", map[string]any{})
-	if err != nil {
-		return nil, err
-	}
-	rules, err := client.callTool(ctx, "list_business_rules", map[string]any{})
-	if err != nil {
-		return nil, err
-	}
-
-	var execution any
-	var executions any
 	switch {
-	case strings.TrimSpace(input.MessageID) != "":
-		execution, err = client.callTool(ctx, "get_execution", map[string]any{"message_id": input.MessageID})
-	case strings.TrimSpace(input.CorrelationID) != "":
-		executions, err = client.callTool(ctx, "find_executions", map[string]any{"correlation_id": input.CorrelationID, "workflow": input.Workflow})
-	case strings.TrimSpace(input.TraceID) != "":
-		executions, err = client.callTool(ctx, "find_executions", map[string]any{"trace_id": input.TraceID, "workflow": input.Workflow})
-	default:
+	case strings.TrimSpace(input.MessageID) == "" && strings.TrimSpace(input.CorrelationID) == "" && strings.TrimSpace(input.TraceID) == "":
 		return nil, fmt.Errorf("message_id, correlation_id or trace_id is required")
 	}
-	if err != nil {
-		return nil, err
+
+	sourceNames := make([]string, 0, len(targets))
+	sources := make([]explainSource, 0, len(targets))
+	for name, baseURL := range targets {
+		sourceNames = append(sourceNames, name)
+		source := explainSource{Target: name, MCPURL: strings.TrimRight(baseURL, "/")}
+		client := &mcpClient{
+			baseURL: source.MCPURL,
+			apiKey:  env("AGENT_MCP_API_KEY", ""),
+			client: &http.Client{
+				Timeout: parseDurationEnv("AGENT_REQUEST_TIMEOUT", 12*time.Second),
+			},
+		}
+
+		workflow, err := client.callTool(ctx, "explain_workflow", map[string]any{})
+		if err != nil {
+			source.Error = err.Error()
+			sources = append(sources, source)
+			continue
+		}
+		source.Workflow = workflow
+
+		rules, err := client.callTool(ctx, "list_business_rules", map[string]any{})
+		if err != nil {
+			source.Error = err.Error()
+			sources = append(sources, source)
+			continue
+		}
+		source.BusinessRules = rules
+
+		switch {
+		case strings.TrimSpace(input.MessageID) != "":
+			source.Execution, err = client.callTool(ctx, "get_execution", map[string]any{"message_id": input.MessageID})
+		case strings.TrimSpace(input.CorrelationID) != "":
+			source.Executions, err = client.callTool(ctx, "find_executions", map[string]any{"correlation_id": input.CorrelationID, "workflow": input.Workflow})
+		case strings.TrimSpace(input.TraceID) != "":
+			source.Executions, err = client.callTool(ctx, "find_executions", map[string]any{"trace_id": input.TraceID, "workflow": input.Workflow})
+		}
+		if err != nil {
+			source.Error = err.Error()
+		}
+		sources = append(sources, source)
 	}
 
-	prompt := buildPrompt(input, workflow, rules, execution, executions)
+	sort.Strings(sourceNames)
+	if !hasUsefulSource(sources) {
+		return nil, fmt.Errorf("no MCP source returned usable data")
+	}
+
+	prompt := buildPrompt(input, sources)
 	explanation, provider, model := generateAnswer(ctx, prompt, logger)
 
 	return &explainResponse{
-		Target:         target,
-		MCPURL:         baseURL,
-		Workflow:       workflow,
-		BusinessRules:  rules,
-		Execution:      execution,
-		Executions:     executions,
+		Target:         targetLabel,
+		Targets:        sourceNames,
+		Sources:        sources,
 		Explanation:    explanation,
 		ReasoningStyle: provider,
 		Question:       input.Question,
@@ -172,20 +196,27 @@ func explain(ctx context.Context, input explainRequest, logger *slog.Logger) (*e
 	}, nil
 }
 
-func resolveTarget(input explainRequest) (string, string) {
+func resolveTargets(input explainRequest) (map[string]string, string) {
 	if strings.TrimSpace(input.MCPURL) != "" {
-		return input.MCPURL, "custom"
+		return map[string]string{"custom": input.MCPURL}, "custom"
 	}
 	target := strings.TrimSpace(input.Target)
 	if target == "" {
-		target = env("AGENT_DEFAULT_TARGET", "product")
+		target = env("AGENT_DEFAULT_TARGET", "all")
 	}
-	return targetMap()[target], target
+	targets := targetMap()
+	if target == "all" {
+		return targets, "all"
+	}
+	if targets[target] == "" {
+		return map[string]string{}, target
+	}
+	return map[string]string{target: targets[target]}, target
 }
 
 func targetMap() map[string]string {
 	targets := map[string]string{}
-	raw := strings.TrimSpace(env("AGENT_MCP_TARGETS", "product=http://localhost:9094/mcp"))
+	raw := strings.TrimSpace(env("AGENT_MCP_TARGETS", "service=http://localhost:9091/mcp,product=http://localhost:9094/mcp"))
 	for _, item := range strings.Split(raw, ",") {
 		parts := strings.SplitN(strings.TrimSpace(item), "=", 2)
 		if len(parts) != 2 {
@@ -236,7 +267,7 @@ func (c *mcpClient) callTool(ctx context.Context, name string, args map[string]a
 	return parsed.Result, nil
 }
 
-func buildPrompt(input explainRequest, workflow, rules, execution, executions any) string {
+func buildPrompt(input explainRequest, sources []explainSource) string {
 	var sections []string
 	sections = append(sections,
 		"Você é um agente de explicabilidade de workflows.",
@@ -245,15 +276,38 @@ func buildPrompt(input explainRequest, workflow, rules, execution, executions an
 	if question := strings.TrimSpace(input.Question); question != "" {
 		sections = append(sections, "Pergunta do usuário:\n"+question)
 	}
-	sections = append(sections, "Workflow:\n"+pretty(workflow))
-	sections = append(sections, "Regras de negócio:\n"+pretty(rules))
-	if execution != nil {
-		sections = append(sections, "Execução:\n"+pretty(execution))
-	}
-	if executions != nil {
-		sections = append(sections, "Execuções relacionadas:\n"+pretty(executions))
+	for _, source := range sources {
+		block := []string{
+			fmt.Sprintf("Fonte MCP: %s", source.Target),
+			fmt.Sprintf("URL: %s", source.MCPURL),
+		}
+		if source.Error != "" {
+			block = append(block, "Erro:\n"+source.Error)
+		}
+		if source.Workflow != nil {
+			block = append(block, "Workflow:\n"+pretty(source.Workflow))
+		}
+		if source.BusinessRules != nil {
+			block = append(block, "Regras de negócio:\n"+pretty(source.BusinessRules))
+		}
+		if source.Execution != nil {
+			block = append(block, "Execução:\n"+pretty(source.Execution))
+		}
+		if source.Executions != nil {
+			block = append(block, "Execuções relacionadas:\n"+pretty(source.Executions))
+		}
+		sections = append(sections, strings.Join(block, "\n\n"))
 	}
 	return strings.Join(sections, "\n\n")
+}
+
+func hasUsefulSource(sources []explainSource) bool {
+	for _, source := range sources {
+		if source.Workflow != nil || source.BusinessRules != nil || source.Execution != nil || source.Executions != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func generateAnswer(ctx context.Context, prompt string, logger *slog.Logger) (string, string, string) {
