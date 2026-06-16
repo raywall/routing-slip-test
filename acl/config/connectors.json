@@ -1,0 +1,45 @@
+{
+  "connectors": [
+    {
+      "field": "custodias",
+      "adapter": "rest",
+      "adapterConfig": {
+        "baseUrl": "${EXTERNAL_API_URL}",
+        "endpoint": "/consulta-contratos-custodia/v1/clientes/{codigoCliente}/operacoes?operacaoId={identificadorOperacaoCredito}&expand=convenio,cliente,produto,parcelas&siglaCustodia=SF,F5&situacaoOperacao=ativa",
+        "method": "GET",
+        "skipTLSVerify": true,
+        "headers": {
+          "X-Serial-Number": "${EXTERNAL_API_SERIAL}"
+        }
+      },
+      "responseTransform": {
+        "unwrapPath": "data",
+        "errorsPath": "errors",
+        "failOnErrors": true
+      },
+      "timeoutMs": 2000,
+      "retries": 1
+    },
+    {
+      "field": "saldos",
+      "adapter": "rest",
+      "adapterConfig": {
+        "baseUrl": "${EXTERNAL_API_URL}",
+        "endpoint": "/posvenda/v1/operacoes_credito?id_operacao={identificadorOperacaoCredito}&data_posicao_calculo={dataPosicaoCalculo}&expand=saldo",
+        "method": "GET",
+        "skipTLSVerify": true,
+        "headers": {
+          "X-Serial-Number": "${EXTERNAL_API_SERIAL}",
+          "x-api-filter": "OPERACAO"
+        }
+      },
+      "responseTransform": {
+        "unwrapPath": "data",
+        "errorsPath": "errors",
+        "failOnErrors": true
+      },
+      "timeoutMs": 2000,
+      "retries": 1
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "types": [
+    {
+      "name": "ApiUnificadaProduto",
+      "fields": [
+        { "name": "codigoProdutoOperacional", "type": "Int" },
+        { "name": "codigoProdutoFinanceiro", "type": "Int" },
+        { "name": "codigoProdutoCreditoLimite", "type": "Int" }
+      ]
+    },
+    {
+      "name": "ApiUnificadaParcela",
+      "fields": [
+        { "name": "numeroParcela", "type": "Int" },
+        { "name": "situacaoParcela", "type": "String" },
+        { "name": "dataVencimento", "type": "String" },
+        { "name": "numeroPlanoAmortizacao", "type": "Int" },
+        { "name": "codigoSituacaoParcela", "type": "Int" },
+        { "name": "valorParcelaPrincipal", "type": "Float" },
+        { "name": "valorJuroParcelaPrincipal", "type": "Float" },
+        { "name": "valorParcelaOriginal", "type": "Float" },
+        { "name": "valorSaldoPrincipal", "type": "Float" },
+        { "name": "valorSaldoPrincipalTotal", "type": "Float" }
+      ]
+    },
+    {
+      "name": "ApiUnificadaConvenio",
+      "fields": [
+        { "name": "codigoConvenio", "type": "String" }
+      ]
+    },
+    {
+      "name": "ApiUnificadaCliente",
+      "fields": [
+        { "name": "numeroBeneficio", "type": "String" }
+      ]
+    },
+    {
+      "name": "ApiUnificadaOperacao",
+      "fields": [
+        { "name": "operacaoId", "type": "String" },
+        { "name": "situacaoOperacao", "type": "String" },
+        { "name": "codigoSituacaoOperacao", "type": "Int" },
+        { "name": "siglaCustodia", "type": "String" },
+        { "name": "dataContratacao", "type": "String" },
+        { "name": "codigoEmpresaContabil", "type": "String" },
+        { "name": "produto", "type": "Object", "ofType": "ApiUnificadaProduto" },
+        { "name": "parcelas", "type": "List", "ofType": "ApiUnificadaParcela" },
+        { "name": "convenio", "type": "Object", "ofType": "ApiUnificadaConvenio" },
+        { "name": "cliente", "type": "Object", "ofType": "ApiUnificadaCliente" },
+        { "name": "meioRecebimentoOperacaoCredito", "type": "String" },
+        { "name": "codigoMeioRecebimentoOperacaoCredito", "type": "Int" },
+        { "name": "saldoDevedor", "type": "Float" }
+      ]
+    },
+    {
+      "name": "SG2SaldoParcela",
+      "fields": [
+        { "name": "numero_plano_amortizacao_contratacao", "type": "Int" },
+        { "name": "numero_parcela_amortizacao", "type": "Int" },
+        { "name": "valor_parcela_amortizacao", "type": "Float" },
+        { "name": "valor_liquidacao_antecipada", "type": "Float" },
+        { "name": "valor_desconto_abatimento", "type": "Float" }
+      ]
+    },
+    {
+      "name": "SG2Saldo",
+      "fields": [
+        { "name": "saldo_liquido_operacao", "type": "Float" },
+        { "name": "quantidade_dia_atraso", "type": "Int" },
+        { "name": "saldo_devedor_operacao_sem_desconto", "type": "Float" },
+        { "name": "saldo_parcelas", "type": "List", "ofType": "SG2SaldoParcela" }
+      ]
+    },
+    {
+      "name": "SG2OperacaoCredito",
+      "fields": [
+        { "name": "saldo", "type": "Object", "ofType": "SG2Saldo" }
+      ]
+    },
+    {
+      "name": "WorkflowData",
+      "fields": [
+        { "name": "custodias", "type": "List", "ofType": "ApiUnificadaOperacao" },
+        { "name": "saldos", "type": "List", "ofType": "SG2OperacaoCredito" }
+      ]
+    }
+  ],
+  "query": {
+    "name": "Query",
+    "fields": [
+      {
+        "name": "dataSources",
+        "type": "Object",
+        "ofType": "WorkflowData",
+        "args": [
+          { "name": "codigoCliente", "type": "String" },
+          { "name": "identificadorOperacaoCredito", "type": "String" },
+          { "name": "dataPosicaoCalculo", "type": "String" }
+        ]
+      }
+    ]
+  }
+}

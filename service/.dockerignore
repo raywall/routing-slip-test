@@ -1,0 +1,6 @@
+.git
+.bin
+.logs
+.routing-slip-state
+Dockerfile*
+**/*_test.go

@@ -1,0 +1,182 @@
+name: sample-test-routing-slip
+
+networks:
+  sample-test-cluster:
+    name: sample-test-cluster
+
+volumes:
+  localstack-data:
+  kafka-data:
+
+services:
+  localstack:
+    image: localstack/localstack:4.9.2
+    hostname: localstack
+    networks:
+      - sample-test-cluster
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      DEBUG: "1"
+      PERSISTENCE: "1"
+      SERVICES: "sns,sqs,dynamodb,lambda,sts"
+      AWS_DEFAULT_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      DOCKER_HOST: "unix:///var/run/docker.sock"
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./scripts/localstack-init.sh:/scripts/localstack-init.sh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  kafka:
+    image: apache/kafka:3.8.1
+    hostname: kafka
+    networks:
+      - sample-test-cluster
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - ./scripts/kafka-init.sh:/scripts/kafka-init.sh:ro
+    healthcheck:
+      test: [ "CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list" ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  metrics-service:
+    build:
+      context: ./metrics
+    hostname: metrics-service
+    networks:
+      - sample-test-cluster
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      SERVICE_ADDR: ":8080"
+      DYNAMODB_ENDPOINT: "http://localstack:4566"
+      DYNAMODB_TABLE: "custom-business-metrics-events"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      RETENTION_DAYS: "30"
+    labels:
+      sample.aws.simulation: "ecs-service"
+      sample.aws.cluster: "sample-test-cluster"
+      sample.aws.service: "metrics-service"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  acl-service:
+    build:
+      context: ./acl
+    hostname: acl-service
+    networks:
+      - sample-test-cluster
+    depends_on:
+      metrics-service:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      GRAPHQL_ADDR: ":8090"
+      GRAPHQL_MCP_ADDR: ":9093"
+      METRICS_ENDPOINT: "http://metrics-service:8080/v1/metrics"
+      AWS_REGION: "us-east-1"
+      AWS_ENDPOINT_URL: "http://localstack:4566"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      EXTERNAL_API_URL: "${EXTERNAL_API_URL:-https://mock.raysouz.studio}"
+      EXTERNAL_API_SERIAL: "${EXTERNAL_API_SERIAL:-b7af3a9e-6d1a-4b15-9837-3e0f0b47e5b4}"
+      ACL_REQUIRE_TOKEN_STS: "${ACL_REQUIRE_TOKEN_STS:-false}"
+      ACL_KAFKA_BROKERS: "kafka:9092"
+      ACL_KAFKA_TOPIC: "sample-test-acl-events"
+      ACL_KAFKA_GROUP_ID: "sample-test-acl"
+    labels:
+      sample.aws.simulation: "ecs-service"
+      sample.aws.cluster: "sample-test-cluster"
+      sample.aws.service: "acl-service"
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/graphql"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  metrics-webview:
+    build:
+      context: ./webview
+    hostname: metrics-webview
+    networks:
+      - sample-test-cluster
+    depends_on:
+      metrics-service:
+        condition: service_healthy
+    labels:
+      sample.aws.simulation: "ecs-service"
+      sample.aws.cluster: "sample-test-cluster"
+      sample.aws.service: "metrics-webview"
+    ports:
+      - "4200:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  routing-slip-lambda:
+    build:
+      context: ./service
+      dockerfile: Dockerfile.lambda
+    hostname: routing-slip-lambda
+    networks:
+      - sample-test-cluster
+    depends_on:
+      localstack:
+        condition: service_healthy
+      metrics-service:
+        condition: service_healthy
+      acl-service:
+        condition: service_healthy
+    environment:
+      METRICS_ENDPOINT: "http://metrics-service:8080/v1/metrics"
+      GRAPHQL_ENDPOINT: "http://acl-service:8090/graphql"
+      AWS_ENDPOINT_URL: "http://localstack:4566"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      ROUTING_CONFIG_PATH: "/var/task/config.yaml"
+      ROUTING_WORKFLOW_PATH: "/var/task/workflow.yaml"
+    labels:
+      sample.aws.simulation: "lambda"
+      sample.aws.cluster: "sample-test-cluster"
+      sample.aws.function: "routing-slip-product-processing"
+    ports:
+      - "8088:8080"

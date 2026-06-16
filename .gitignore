@@ -1,0 +1,5 @@
+.bin/
+.logs/
+.pid_*
+service/.routing-slip-state/
+localstack/

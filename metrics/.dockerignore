@@ -1,0 +1,5 @@
+.git
+.bin
+.logs
+Dockerfile
+**/*_test.go

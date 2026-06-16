@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "schema": "local:schema.json",
+  "connectors": "local:connectors.json",
+  "mock": "local:mock.json",
+  "route": "/graphql",
+  "pretty": true,
+  "graphiql": true,
+  "allow_partial": false,
+  "authorization": {
+    "require_token_sts": true,
+    "skip_tls_verify": true,
+    "tokenService": {
+      "token_authorization_url": "https://mock.raysouz.studio/api/oauth/token",
+      "headers": {
+        "x-serial-number": "${EXTERNAL_API_SERIAL}"
+      },
+      "credentials": {
+        "client_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "client_secret": "550e8400-e29b-41d4-a716-446655440000"
+      }
+    }
+  }
+}

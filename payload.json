@@ -1,0 +1,23 @@
+{
+  "data": {
+    "codigo_identificador_evento": "evt-sample-test-001",
+    "data_hora_envio_evento": "2025-05-15T18:30:00Z",
+    "codigo_identificacao_pessoa": "12345678901",
+    "codigo_identificacao_operacao_credito": "2699999999",
+    "ano_referencia": 2026,
+    "mes_referencia": 5,
+    "codigo_identificacao_convenio": "133341",
+    "valor_desconto": 82.6,
+    "codigo_motivo": [
+      "00"
+    ],
+    "codigo_matricula": "MAT123456",
+    "codigo_identificacao_pessoa_empregador": "98765432000199",
+    "codigo_tipo_pessoa_empregador": "J",
+    "event_name": "DESCONTO_FOLHA_REALIZADO",
+    "numero_parcela": 5,
+    "descricao_classificacao": "NORMAL"
+  },
+  "correlation_id": "corr-sample-test-001",
+  "received_at": "2026-05-21T00:00:00Z"
+}

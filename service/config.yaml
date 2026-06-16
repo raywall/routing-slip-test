@@ -1,0 +1,22 @@
+service:
+  name: product-processing
+
+rest:
+  addr: ":8088"
+  path: /process
+
+mcp:
+  enabled: true
+  addr: ":9091"
+
+state_store:
+  type: dynamodb
+  table: routing-slip-state
+  region: us-east-1
+  endpoint: ${AWS_ENDPOINT_URL:-http://localhost:4566}
+
+idempotency:
+  enabled: true
+  key_template: "{workflow}:{message_id}:{step_index}:{step}"
+
+graphql_endpoint: ${GRAPHQL_ENDPOINT:-http://localhost:8090/graphql}
