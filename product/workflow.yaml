@@ -1,0 +1,83 @@
+name: product-processing-sqs
+description: Consome eventos filtrados por convenio em uma fila SQS e executa o workflow de produto.
+error_policy: stop
+message_id_path: data.codigo_identificador_evento
+correlation_id_path: correlation_id
+
+business_rules:
+  - id: product-id-required
+    name: Product identifier is required
+    description: Requests without a product identifier cannot be processed.
+    status: active
+
+steps:
+  # ──────────────────────────────────────────────────────────────────
+  # 1. Validacao de campos obrigatorios do evento SQS filtrado
+  # ──────────────────────────────────────────────────────────────────
+  - name: validate
+    params:
+      required:
+        - data.codigo_identificador_evento
+        - data.data_hora_envio_evento
+        - data.codigo_identificacao_pessoa
+        - data.codigo_identificacao_operacao_credito
+        - data.ano_referencia
+        - data.mes_referencia
+        - data.codigo_identificacao_convenio
+        - data.valor_desconto
+        - data.codigo_motivo
+        - data.event_name
+        - data.numero_parcela
+
+  # ──────────────────────────────────────────────────────────────────
+  # 2. Consultar operacoes de credito do cliente na API Unificada
+  # ──────────────────────────────────────────────────────────────────
+  - id: consultar_api_unificada
+    name: graphql_enrich
+    params:
+      query: |
+        query ($codigoCliente: String!, $identificadorOperacaoCredito: String!, $dataPosicaoCalculo: String!) {
+          dataSources(codigoCliente: $codigoCliente, identificadorOperacaoCredito: $identificadorOperacaoCredito, dataPosicaoCalculo: $dataPosicaoCalculo) {
+            custodias {
+              operacaoId
+              situacaoOperacao
+              codigoSituacaoOperacao
+              siglaCustodia
+              codigoEmpresaContabil
+              saldoDevedor
+              meioRecebimentoOperacaoCredito
+              codigoMeioRecebimentoOperacaoCredito
+              convenio {
+                codigoConvenio
+              }
+              cliente {
+                numeroBeneficio
+              }
+              produto {
+                codigoProdutoOperacional
+                codigoProdutoFinanceiro
+                codigoProdutoCreditoLimite
+              }
+              parcelas {
+                numeroParcela
+                situacaoParcela
+                codigoSituacaoParcela
+                dataVencimento
+                numeroPlanoAmortizacao
+                valorParcelaPrincipal
+                valorJuroParcelaPrincipal
+                valorParcelaOriginal
+                valorSaldoPrincipal
+                valorSaldoPrincipalTotal
+              }
+            }
+          }
+        }
+      variables:
+        codigoCliente: '{data.codigo_identificacao_pessoa}'
+        identificadorOperacaoCredito: '{data.codigo_identificacao_operacao_credito}'
+        dataPosicaoCalculo: '2025-05-13'
+      target: operacoes_api_unificada
+      result_path: dataSources.custodias
+      timeout_ms: 4000
+      required: true

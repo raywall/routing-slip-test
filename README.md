@@ -5,6 +5,8 @@ Laboratorio Docker para validar o uso integrado de:
 - `custom-business-metrics/service` como service ECS simulado no Docker, porta `8080`;
 - `go-graphql-connector` como ACL GraphQL em service ECS simulado no Docker, porta `8090`;
 - `custom-business-metrics/webview` como service ECS simulado no Docker, porta `4200`;
+- `sample-test/product` como worker ECS simulado consumindo SQS, portas `8087` e `9094` para health e MCP;
+- `sample-test/agent` como agent ECS simulado para explicabilidade usando MCP, porta `8095`;
 - `routing-slip-pattern` como Lambda em container Docker, porta `8088`;
 - LocalStack para DynamoDB, SNS, SQS, ECS metadata e STS, porta `4566`;
 - Kafka para producao de eventos consumidos pelo ACL, porta host `29092`.
@@ -21,6 +23,17 @@ Lambda local:8088 -> routing-slip-pattern
   -> metrics-service:8080/v1/metrics
   -> LocalStack DynamoDB routing-slip-state
 
+product-service:8087
+  -> consome SQS sample-test-convenio-133341
+  -> acl-service:8090/graphql
+  -> metrics-service:8080/v1/metrics
+  -> LocalStack DynamoDB routing-slip-state
+  -> expõe MCP em :9094/mcp
+
+agent-service:8095
+  -> consulta MCP do product-service
+  -> responde perguntas sobre o processamento
+
 SNS sample-test-routing-events
   -> SQS sample-test-convenio-133341  filtro data.codigo_identificacao_convenio = 133341
   -> SQS sample-test-convenio-outros  filtro anything-but 133341
@@ -34,7 +47,7 @@ Kafka sample-test-acl-events -> acl-service consumer group sample-test-acl
 make start
 ```
 
-O comando provisiona LocalStack, DynamoDB, SNS, SQS, cluster ECS simulado, Kafka, topico Kafka e os quatro containers de aplicacao.
+O comando provisiona LocalStack, DynamoDB, SNS, SQS, cluster ECS simulado, Kafka, topico Kafka e os containers de aplicacao do laboratorio.
 
 ## Imagens Docker
 
@@ -52,6 +65,9 @@ URLs principais:
 Metrics API: http://localhost:8080
 GraphQL ACL: http://localhost:8090/graphql
 Webview:     http://localhost:4200
+Product:     http://localhost:8087/health
+Product MCP: http://localhost:9094/mcp
+Agent:       http://localhost:8095
 Lambda RIE:  http://localhost:8088/2015-03-31/functions/function/invocations
 LocalStack:  http://localhost:4566
 Kafka host:  localhost:29092
@@ -93,6 +109,25 @@ make produce-kafka
 ```
 
 O ACL consome o topico `sample-test-acl-events` com o group id `sample-test-acl` e registra os eventos em log. O consumo é propositalmente simples neste laboratorio: ele valida conectividade e consumo do canal de eventos sem alterar o comportamento GraphQL.
+
+## Explicabilidade com MCP
+
+Depois de publicar um evento no SNS e deixar o `product-service` processar a fila filtrada, use:
+
+```bash
+make explain CORRELATION_ID=corr-baixa-parcelas-001
+```
+
+O agent consulta o MCP do `product-service`, recupera workflow, regras de negócio e snapshots de execução e devolve uma resposta pronta para leitura humana.
+
+Por padrão o `agent-service` usa um modo determinístico local. Se quiser testar com um modelo pequeno em um servidor compatível com Ollama:
+
+```bash
+make start \
+  AGENT_LLM_PROVIDER=ollama \
+  AGENT_OLLAMA_URL=http://host.docker.internal:11434 \
+  AGENT_OLLAMA_MODEL=smollm2:135m
+```
 
 ## Configuracao da API externa
 

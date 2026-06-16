@@ -17,6 +17,25 @@
   --shadow: 0 16px 40px rgba(28, 42, 54, 0.16);
 }
 
+body.theme-dark {
+  color-scheme: dark;
+  --bg: #0f1720;
+  --panel: #15202b;
+  --panel-soft: #1a2834;
+  --ink: #e7eef5;
+  --muted: #9cb0c1;
+  --line: #233546;
+  --line-dark: #304355;
+  --blue: #60a5fa;
+  --blue-soft: #152d46;
+  --green: #4cc38a;
+  --red: #ef6b6b;
+  --amber: #f7b955;
+  --purple: #ad8cdf;
+  --teal: #49c7c7;
+  --shadow: 0 18px 42px rgba(0, 0, 0, 0.45);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -49,7 +68,7 @@ input,
 select {
   border: 1px solid var(--line-dark);
   border-radius: 4px;
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
   font: inherit;
 }
@@ -344,7 +363,7 @@ body.dashboard-editing .metrics-grid {
   grid-template-rows: auto 1fr;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
   box-shadow: 0 10px 24px rgba(28, 42, 54, .08);
   overflow: hidden;
 }
@@ -375,7 +394,7 @@ body.widget-resizing * {
   gap: 10px;
   padding: 9px 10px;
   border-bottom: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
 }
 
 .metric-widget-title {
@@ -493,7 +512,7 @@ body.dashboard-editing .widget-resize {
   width: 294px;
   height: calc(100vh - 54px);
   border-left: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
   box-shadow: -18px 0 36px rgba(28, 42, 54, .12);
   transform: translateX(100%);
   transition: transform .2s ease;
@@ -527,7 +546,7 @@ body.dashboard-editing .widget-palette {
   gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
   padding: 9px;
   cursor: grab;
 }
@@ -604,7 +623,7 @@ body.dashboard-editing .widget-palette {
   height: 34px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--line);
-  background: #f7f9fb;
+  background: var(--panel-soft);
   color: #4c5d67;
   font-size: 11px;
   font-weight: 800;
@@ -627,12 +646,12 @@ body.dashboard-editing .widget-palette {
 }
 
 .process-table tbody tr:hover {
-  background: #f7fbff;
+  background: color-mix(in srgb, var(--blue) 10%, var(--panel));
   border-left-color: var(--blue);
 }
 
 code {
-  color: #33434c;
+  color: color-mix(in srgb, var(--ink) 92%, transparent);
   font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -708,6 +727,9 @@ code {
 
 .modal-shell {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
 }
 
 .modal-header {
@@ -715,7 +737,7 @@ code {
   gap: 18px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfd;
+  background: var(--panel-soft);
 }
 
 .plain-button {
@@ -733,7 +755,8 @@ code {
   display: grid;
   gap: 14px;
   max-height: calc(100vh - 150px);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .config-grid {
@@ -811,7 +834,7 @@ code {
   gap: 10px;
   padding: 9px 10px;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfd;
+  background: var(--panel-soft);
 }
 
 #widget-preview-body {
@@ -835,6 +858,7 @@ code {
   border: 1px solid var(--line);
   background: var(--panel-soft);
   padding: 12px;
+  min-width: 0;
 }
 
 .process-kpis strong {
@@ -848,26 +872,82 @@ code {
   font-size: 12px;
 }
 
-.modal-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.process-overview {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
-.modal-tags strong {
-  color: #273640;
+.modal-meta-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.modal-section-title {
+  display: grid;
+  gap: 3px;
+}
+
+.modal-section-title h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.modal-section-title p {
+  color: var(--muted);
+}
+
+.modal-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.modal-meta-grid-tags {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.modal-meta-item {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  padding: 10px 12px;
+}
+
+.modal-meta-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.modal-meta-value {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .step-list {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .step-item {
   border: 1px solid var(--line);
   border-left: 4px solid var(--blue);
-  background: #fff;
+  background: var(--panel);
   cursor: pointer;
+  min-width: 0;
 }
 
 .step-item.success {
@@ -888,6 +968,7 @@ code {
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
+  min-width: 0;
 }
 
 .step-summary time,
@@ -895,12 +976,19 @@ code {
   color: var(--muted);
 }
 
+.step-summary strong,
+.step-summary p {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .step-details {
   display: none;
   margin: 0;
   padding: 12px;
   border-top: 1px solid var(--line);
-  background: #fbfcfd;
+  background: var(--panel-soft);
+  min-width: 0;
 }
 
 .step-item.open .step-details {
@@ -911,6 +999,7 @@ code {
 .step-details div {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .step-details dt {
@@ -922,17 +1011,32 @@ code {
 
 .step-details dd {
   margin: 0;
+  min-width: 0;
 }
 
-.step-details code {
+.detail-text {
   display: block;
-  max-height: 180px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.detail-code {
+  display: block;
+  margin: 0;
+  max-width: 100%;
+  max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: #fff;
+  background: var(--panel);
   padding: 8px;
+  color: color-mix(in srgb, var(--ink) 94%, transparent);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (max-width: 760px) {
@@ -971,6 +1075,11 @@ code {
 
   .process-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modal-meta-grid,
+  .modal-meta-grid-tags {
+    grid-template-columns: 1fr;
   }
 
   .step-summary {

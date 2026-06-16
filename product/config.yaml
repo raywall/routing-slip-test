@@ -1,0 +1,23 @@
+service:
+  name: product-processing-sqs
+  run_id: sample-test-product
+
+rest:
+  addr: ":8087"
+  path: /process
+
+mcp:
+  enabled: true
+  addr: ":9094"
+
+state_store:
+  type: dynamodb
+  table: routing-slip-state
+  region: us-east-1
+  endpoint: ${PRODUCT_SQS_ENDPOINT:-http://localhost:4566}
+
+idempotency:
+  enabled: true
+  key_template: "{workflow}:{message_id}:{step_index}:{step}"
+
+graphql_endpoint: ${GRAPHQL_ENDPOINT:-http://localhost:8090/graphql}

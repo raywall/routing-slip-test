@@ -1,0 +1,16 @@
+FROM golang:1.25-alpine AS build
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/product .
+
+FROM alpine:3.22
+
+RUN apk add --no-cache ca-certificates
+WORKDIR /app
+COPY --from=build /out/product /app/product
+COPY config.yaml workflow.yaml /app/
+EXPOSE 8087 9094
+ENTRYPOINT ["/app/product"]

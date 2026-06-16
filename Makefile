@@ -11,13 +11,13 @@ KAFKA_TOPIC ?= sample-test-acl-events
 KAFKA_BOOTSTRAP_HOST ?= localhost:29092
 PAYLOAD ?= payload.json
 
-.PHONY: help prepare build test start health invoke-lambda publish-sns produce-kafka queues logs stop reload clean
+.PHONY: help prepare build test start health invoke-lambda publish-sns produce-kafka queues logs stop reload clean explain
 
 help:
 	@printf "sample-test\n\n"
 	@printf "Infra e runtime Docker:\n"
 	@printf "  make prepare        Sobe LocalStack, cria DynamoDB/SNS/SQS/ECS cluster e cria topico Kafka\n"
-	@printf "  make start          Builda e sobe webview, metrics, ACL e routing-slip como Lambda\n"
+	@printf "  make start          Sobe webview, metrics, ACL, product worker, agent e routing-slip como Lambda\n"
 	@printf "  make health         Valida endpoints principais\n"
 	@printf "  make logs           Acompanha logs dos containers\n"
 	@printf "  make stop           Para toda a stack\n"
@@ -27,6 +27,7 @@ help:
 	@printf "  make publish-sns    Publica PAYLOAD no SNS usando CONVENIO=133341 por padrao\n"
 	@printf "  make produce-kafka  Produz PAYLOAD no topico Kafka consumido pelo ACL\n"
 	@printf "  make queues         Lista mensagens nas duas filas SQS filtradas\n"
+	@printf "  make explain        Consulta o agent de explicabilidade com CORRELATION_ID=...\n"
 	@printf "  make test           Executa testes Go e valida o compose\n"
 
 prepare:
@@ -35,23 +36,27 @@ prepare:
 	@$(COMPOSE) exec -T kafka /bin/sh /scripts/kafka-init.sh
 
 build:
-	@$(COMPOSE) build metrics-service acl-service metrics-webview routing-slip-lambda
+	@$(COMPOSE) build metrics-service acl-service product-service agent-service routing-slip-lambda
 
 test:
 	@cd metrics && GOWORK=off go test ./... && GOWORK=off go vet ./...
 	@cd acl && GOWORK=off go test ./... && GOWORK=off go vet ./...
+	@cd product && GOWORK=off go test ./... && GOWORK=off go vet ./...
+	@cd agent && GOWORK=off go test ./... && GOWORK=off go vet ./...
 	@cd service && GOWORK=off go test ./... && GOWORK=off go vet ./...
 	@$(COMPOSE) config >/dev/null
 
 start: prepare
 	@EXTERNAL_API_URL="$(EXTERNAL_API_URL)" EXTERNAL_API_SERIAL="$(EXTERNAL_API_SERIAL)" \
-		$(COMPOSE) up -d --build --wait metrics-service acl-service metrics-webview routing-slip-lambda
+		$(COMPOSE) up -d --build --wait metrics-service acl-service metrics-webview product-service agent-service routing-slip-lambda
 	@$(MAKE) health
 
 health:
 	@curl --fail --silent http://localhost:8080/health >/dev/null && echo "metrics ECS: ok"
 	@curl --fail --silent http://localhost:8090/graphql >/dev/null && echo "acl ECS:     ok"
 	@curl --fail --silent http://localhost:4200 >/dev/null && echo "webview ECS: ok"
+	@curl --fail --silent http://localhost:8087/health >/dev/null && echo "product ECS: ok"
+	@curl --fail --silent http://localhost:8095/health >/dev/null && echo "agent ECS:   ok"
 	@code=$$(curl --silent --output /dev/null --write-out '%{http_code}' "$(LAMBDA_URL)" -H 'content-type: application/json' --data '{}' || true); \
 		[ "$$code" != "000" ] && echo "lambda:      ok" || (echo "lambda:      unavailable"; exit 1)
 
@@ -84,8 +89,14 @@ queues:
 		aws --endpoint-url "$(AWS_ENDPOINT)" --region "$(AWS_REGION)" sqs receive-message --queue-url "$$url" --max-number-of-messages 10 --wait-time-seconds 1 --output json; \
 	done
 
+explain:
+	@test -n "$(CORRELATION_ID)" || (echo "Informe CORRELATION_ID=..."; exit 1)
+	@curl --fail --silent http://localhost:8095/v1/explain \
+		-H 'content-type: application/json' \
+		--data '{"target":"product","correlation_id":"$(CORRELATION_ID)","question":"O que aconteceu com este processamento e em que etapa ele terminou?"}'
+
 logs:
-	@$(COMPOSE) logs -f localstack kafka metrics-service acl-service metrics-webview routing-slip-lambda
+	@$(COMPOSE) logs -f localstack kafka metrics-service acl-service metrics-webview product-service agent-service routing-slip-lambda
 
 stop:
 	@$(COMPOSE) down --remove-orphans

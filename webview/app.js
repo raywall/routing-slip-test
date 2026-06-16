@@ -19,6 +19,7 @@ const state = {
     rangeFrom: "",
     rangeTo: "",
     refreshInterval: 5000,
+    theme: "light",
   },
   timer: null,
   events: [],
@@ -40,6 +41,8 @@ const els = {
   rangeTo: document.querySelector("#range-to"),
   refreshInterval: document.querySelector("#refresh-interval"),
   refreshNow: document.querySelector("#refresh-now"),
+  themeToggle: document.querySelector("#theme-toggle"),
+  themeToggleIcon: document.querySelector("#theme-toggle-icon"),
   openConfig: document.querySelector("#open-config"),
   saveConfig: document.querySelector("#save-config"),
   configModal: document.querySelector("#config-modal"),
@@ -86,6 +89,7 @@ function loadSettings() {
   els.rangeTo.value = state.settings.rangeTo;
   els.refreshInterval.value = String(state.settings.refreshInterval);
   syncRangeControls();
+  applyTheme(state.settings.theme);
 }
 
 function loadDashboard() {
@@ -131,9 +135,24 @@ function saveSettings() {
     rangeFrom: els.rangeFrom.value,
     rangeTo: els.rangeTo.value,
     refreshInterval: Number(els.refreshInterval.value),
+    theme: state.settings.theme || "light",
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
   scheduleRefresh();
+}
+
+function applyTheme(theme) {
+  const normalized = theme === "dark" ? "dark" : "light";
+  state.settings.theme = normalized;
+  document.body.classList.toggle("theme-dark", normalized === "dark");
+  if (els.themeToggleIcon) {
+    els.themeToggleIcon.innerHTML = normalized === "dark" ? "&#9788;" : "&#9790;";
+  }
+  if (els.themeToggle) {
+    const label = normalized === "dark" ? "Ativar tema claro" : "Ativar tema escuro";
+    els.themeToggle.setAttribute("title", label);
+    els.themeToggle.setAttribute("aria-label", label);
+  }
 }
 
 function normalizeBaseURL(value) {
@@ -576,18 +595,43 @@ function openProcess(id) {
   if (!process) return;
   els.modalTitle.textContent = process.workflow;
   els.modalCopy.textContent = `${process.correlationId} - ${statusLabel(process.status)} - ${formatDuration(process.durationMs)}`;
+  const metadata = [
+    ["Correlation ID", process.correlationId],
+    ["Trace ID", process.traceId],
+    ["Message ID", process.messageId],
+    ["Resultado", statusLabel(process.status)],
+    ["Inicio", formatDateTime(process.startedAt)],
+    ["Fim", formatDateTime(process.updatedAt)],
+    ["Duracao", formatDuration(process.durationMs)],
+    ["Etapas", `${process.completed}/${process.expectedSteps}`],
+  ];
+  const tagEntries = Object.entries(process.tags || {}).sort(([a], [b]) => a.localeCompare(b));
   els.modalBody.innerHTML = `
-    <section class="process-kpis">
-      <div><strong>${process.completed}</strong><span>Concluidas</span></div>
-      <div><strong>${process.failed}</strong><span>Falhas</span></div>
-      <div><strong>${process.stopped}</strong><span>Paradas</span></div>
-      <div><strong>${process.remaining}</strong><span>Faltantes</span></div>
-    </section>
-    <section class="modal-tags">
-      ${Object.entries(process.tags)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => `<span><strong>${escapeHTML(key)}</strong>${escapeHTML(value)}</span>`)
-        .join("")}
+    <section class="process-overview">
+      <section class="process-kpis">
+        <div><strong>${process.completed}</strong><span>Concluidas</span></div>
+        <div><strong>${process.failed}</strong><span>Falhas</span></div>
+        <div><strong>${process.stopped}</strong><span>Paradas</span></div>
+        <div><strong>${process.remaining}</strong><span>Faltantes</span></div>
+      </section>
+      <section class="modal-meta-section">
+        <div class="modal-section-title">
+          <h3>Resumo do processamento</h3>
+          <p>Identificadores e dados gerais desta execucao.</p>
+        </div>
+        <div class="modal-meta-grid">
+          ${metadata.map(([label, value]) => metaItem(label, value)).join("")}
+        </div>
+      </section>
+      <section class="modal-meta-section">
+        <div class="modal-section-title">
+          <h3>Tags capturadas</h3>
+          <p>Atributos coletados para busca, correlacao e observabilidade.</p>
+        </div>
+        <div class="modal-meta-grid modal-meta-grid-tags">
+          ${tagEntries.length ? tagEntries.map(([key, value]) => metaItem(key, value)).join("") : `<div class="modal-meta-item"><span class="modal-meta-label">Tags</span><strong class="modal-meta-value">Nenhuma tag registrada</strong></div>`}
+        </div>
+      </section>
     </section>
     <section class="step-list">
       ${processSteps(process).map((step, index) => stepItem(step, index)).join("")}
@@ -652,8 +696,8 @@ function stepItem(step, index) {
         <div><dt>Valor de entrada</dt><dd>${formatDetail(step.input)}</dd></div>
         <div><dt>Regra aplicada</dt><dd>${formatDetail(step.rule)}</dd></div>
         <div><dt>Valor de saida</dt><dd>${formatDetail(step.output)}</dd></div>
-        <div><dt>Status</dt><dd>${escapeHTML(statusLabel(step.status))}</dd></div>
-        <div><dt>Motivo da falha</dt><dd>${escapeHTML(step.failure || "-")}</dd></div>
+        <div><dt>Status</dt><dd><span class="detail-text">${escapeHTML(statusLabel(step.status))}</span></dd></div>
+        <div><dt>Motivo da falha</dt><dd>${formatDetail(step.failure || "-")}</dd></div>
       </dl>
     </article>
   `;
@@ -683,15 +727,42 @@ function statusLabel(status) {
 
 function formatDetail(value) {
   if (!value) return "-";
-  return `<code>${escapeHTML(prettyJSON(value))}</code>`;
+  return `<pre class="detail-code">${escapeHTML(prettyJSON(value))}</pre>`;
 }
 
 function prettyJSON(value) {
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2);
-  } catch {
-    return String(value);
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
   }
+  const text = String(value);
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return normalizeMultilineText(text);
+  }
+}
+
+function normalizeMultilineText(value) {
+  const text = String(value);
+  try {
+    const reparsed = JSON.parse(`"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+    return reparsed.replace(/\r\n/g, "\n");
+  } catch {
+    return text
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "  ");
+  }
+}
+
+function metaItem(label, value) {
+  return `
+    <div class="modal-meta-item">
+      <span class="modal-meta-label">${escapeHTML(label)}</span>
+      <strong class="modal-meta-value">${escapeHTML(value ?? "-")}</strong>
+    </div>
+  `;
 }
 
 function formatDateTime(value) {
@@ -1067,6 +1138,10 @@ els.saveConfig.addEventListener("click", () => {
   refreshData();
 });
 els.refreshNow.addEventListener("click", refreshData);
+els.themeToggle?.addEventListener("click", () => {
+  applyTheme(state.settings.theme === "dark" ? "light" : "dark");
+  saveSettings();
+});
 els.rangeMode.addEventListener("change", () => {
   syncRangeControls();
   refreshData();
