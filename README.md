@@ -5,6 +5,7 @@ Laboratorio Docker para validar o uso integrado de:
 - `custom-business-metrics/service` como service ECS simulado no Docker, porta `8080`;
 - `go-graphql-connector` como ACL GraphQL em service ECS simulado no Docker, porta `8090`;
 - `custom-business-metrics/webview` como service ECS simulado no Docker, porta `4200`;
+- `sample-test/mock-service` como service ECS simulado para cadastro e execução de mocks dinâmicos, porta `8079`;
 - `sample-test/service/cmd/mcp` como endpoint MCP do fluxo principal, porta `9091`;
 - `sample-test/product` como worker ECS simulado consumindo SQS, portas `8087` e `9094` para health e MCP;
 - `sample-test/agent` como agent ECS simulado para explicabilidade usando MCP, porta `8095`;
@@ -54,6 +55,29 @@ make start
 
 O comando provisiona LocalStack, DynamoDB, SNS, SQS, cluster ECS simulado, Kafka, topico Kafka e os containers de aplicacao do laboratorio.
 
+## Mock Service
+
+O `mock-service` sobe junto com a stack e expõe uma UI em `http://localhost:8079` para:
+
+- adicionar, remover e alterar mocks HTTP;
+- configurar método, endpoint com variáveis de path, headers, query e body esperado;
+- definir resposta estática, templated ou gerada dinamicamente;
+- simular latência com faixa mínima e máxima;
+- preservar dados da requisição na resposta, usando placeholders.
+
+Exemplo de template:
+
+```json
+{
+  "cliente": "{{path.codigoCliente}}",
+  "contrato": "{{path.identificadorOperacaoCredito}}",
+  "origem": "{{query.origem}}",
+  "matricula": "{{body.data.codigo_matricula}}"
+}
+```
+
+Também há geradores especializados para cenários de consignado, criando operações e saldos com parcelas randômicas, mas coerentes com regras básicas de ordenação e atraso.
+
 ## Imagens Docker
 
 Para reduzir consumo de disco, a stack usa poucas familias de imagem:
@@ -70,6 +94,7 @@ URLs principais:
 Metrics API: http://localhost:8080
 GraphQL ACL: http://localhost:8090/graphql
 Webview:     http://localhost:4200
+Mock UI:     http://localhost:8079
 Service MCP: http://localhost:9091/mcp
 Product:     http://localhost:8087/health
 Product MCP: http://localhost:9094/mcp

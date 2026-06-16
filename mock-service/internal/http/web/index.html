@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mock Service Studio</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="page">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div>
+          <p class="eyebrow">Sample Test</p>
+          <h1>Mock Service</h1>
+        </div>
+        <button id="new-mock" class="button button-primary" type="button">Novo mock</button>
+      </div>
+      <p class="sidebar-copy">
+        Cadastre endpoints dinâmicos, preserve variáveis da requisição e simule latência realista para validar ACLs, GraphQL e workflows.
+      </p>
+      <div id="mock-list" class="mock-list"></div>
+    </aside>
+
+    <main class="content">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 id="form-title">Novo mock</h2>
+            <p class="muted">Os campos JSON aceitam objetos e arrays. Os templates aceitam expressões como <code>{{path.contratoId}}</code>, <code>{{query.codigoCliente}}</code> e <code>{{body.data.codigo}}</code>.</p>
+          </div>
+          <div class="actions">
+            <button id="delete-mock" class="button button-danger" type="button" disabled>Excluir</button>
+            <button id="save-mock" class="button button-primary" type="button">Salvar</button>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            <span>Nome</span>
+            <input id="name" type="text" placeholder="Operações consignado">
+          </label>
+          <label>
+            <span>Método</span>
+            <select id="method">
+              <option>GET</option>
+              <option>POST</option>
+              <option>PUT</option>
+              <option>PATCH</option>
+              <option>DELETE</option>
+            </select>
+          </label>
+          <label class="full">
+            <span>Endpoint com path vars</span>
+            <input id="endpoint_pattern" type="text" placeholder="/api/contratos/{codigoCliente}/operacoes/{identificadorOperacaoCredito}">
+          </label>
+          <label class="full">
+            <span>Descrição</span>
+            <input id="description" type="text" placeholder="Mock dinâmico usado pela ACL local">
+          </label>
+          <label>
+            <span>Status code</span>
+            <input id="status_code" type="number" value="200">
+          </label>
+          <label>
+            <span>Modo de resposta</span>
+            <select id="response_mode">
+              <option value="static">static</option>
+              <option value="template">template</option>
+              <option value="generated">generated</option>
+            </select>
+          </label>
+          <label>
+            <span>Latência mínima (ms)</span>
+            <input id="latency_min_ms" type="number" value="0">
+          </label>
+          <label>
+            <span>Latência máxima (ms)</span>
+            <input id="latency_max_ms" type="number" value="0">
+          </label>
+          <label class="checkbox">
+            <input id="enabled" type="checkbox" checked>
+            <span>Mock habilitado</span>
+          </label>
+          <label class="full">
+            <span>Tags (separadas por vírgula)</span>
+            <input id="tags" type="text" placeholder="acl, graphql, consignado">
+          </label>
+        </div>
+
+        <div class="sections">
+          <section>
+            <h3>Match da requisição</h3>
+            <div class="area-grid">
+              <label>
+                <span>Headers esperados (JSON)</span>
+                <textarea id="expected_headers" spellcheck="false">{}</textarea>
+              </label>
+              <label>
+                <span>Query esperada (JSON)</span>
+                <textarea id="expected_query" spellcheck="false">{}</textarea>
+              </label>
+              <label class="full">
+                <span>Body esperado (JSON parcial)</span>
+                <textarea id="expected_body" spellcheck="false">null</textarea>
+              </label>
+            </div>
+          </section>
+
+          <section>
+            <h3>Resposta</h3>
+            <div class="area-grid">
+              <label>
+                <span>Headers da resposta (JSON)</span>
+                <textarea id="response_headers" spellcheck="false">{"Content-Type":"application/json"}</textarea>
+              </label>
+              <label>
+                <span>Variáveis extras (JSON)</span>
+                <textarea id="additional_variables" spellcheck="false">{}</textarea>
+              </label>
+              <label class="full">
+                <span>Body / template da resposta (JSON)</span>
+                <textarea id="response_payload" spellcheck="false">{}</textarea>
+              </label>
+            </div>
+          </section>
+
+          <section>
+            <h3>Gerador dinâmico</h3>
+            <div class="generator-row">
+              <label>
+                <span>Kind</span>
+                <select id="generator_kind">
+                  <option value="">Nenhum</option>
+                  <option value="consignado_operacao_v1">consignado_operacao_v1</option>
+                  <option value="consignado_saldos_v1">consignado_saldos_v1</option>
+                </select>
+              </label>
+              <div id="generator-description" class="hint"></div>
+            </div>
+            <label class="full">
+              <span>Configuração do gerador (JSON)</span>
+              <textarea id="generator_config" spellcheck="false">{
+  "customer_path": "codigoCliente",
+  "contract_path": "identificadorOperacaoCredito"
+}</textarea>
+            </label>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel preview-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Prévia rápida</h2>
+            <p class="muted">Use este bloco como cola para montar chamadas contra o mock.</p>
+          </div>
+        </div>
+        <pre id="preview" class="preview"></pre>
+      </section>
+    </main>
+  </div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
