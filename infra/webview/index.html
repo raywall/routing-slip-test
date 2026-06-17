@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CBM | Processamento</title>
+    <link rel="stylesheet" href="./styles.css?v=20260617-14" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <div class="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path d="M4 18V7m5 11V4m5 14v-8m5 8V6" />
+            </svg>
+          </div>
+          <strong>CBM</strong>
+        </div>
+
+        <nav class="nav-list" aria-label="Navegacao principal">
+          <p>Main</p>
+          <button class="nav-item active" type="button" data-view="overview">
+            <svg viewBox="0 0 24 24"><path d="M4 13h7V4H4v9Zm9 7h7V4h-7v16ZM4 20h7v-5H4v5Z" /></svg>
+            Overview
+            <i></i>
+          </button>
+          <p>System</p>
+          <button id="open-config" class="nav-item" type="button">
+            <svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Zm0-12v3m0 11v3m8.5-8.5h-3m-11 0h-3m14.1-6.1-2.1 2.1m-7.8 7.8-2.1 2.1m12-2.1-2.1-2.1M7.7 8 5.6 5.9" /></svg>
+            Settings
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="avatar">CB</div>
+          <div>
+            <strong>Custom Metrics</strong>
+            <span>Business Observability</span>
+          </div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>Overview</h1>
+            <p id="last-update">Atualizando metricas...</p>
+          </div>
+          <div class="topbar-actions">
+            <div class="connection">
+              <span id="status-dot" class="dot"></span>
+              <span id="status-text">Conectando</span>
+            </div>
+
+            <div class="range-picker">
+              <select id="range-mode" aria-label="Periodo">
+                <option value="15m">Ultimos 15 minutos</option>
+                <option value="30m">Ultimos 30 minutos</option>
+                <option value="1h">Ultima hora</option>
+                <option value="6h">Ultimas 6 horas</option>
+                <option value="24h">Ultimas 24 horas</option>
+                <option value="custom">Periodo exato</option>
+              </select>
+              <div id="custom-range" class="custom-range" hidden>
+                <input id="range-from" type="datetime-local" aria-label="Inicio" />
+                <span>ate</span>
+                <input id="range-to" type="datetime-local" aria-label="Fim" />
+              </div>
+            </div>
+
+            <button id="refresh-now" class="icon-button" type="button" title="Atualizar" aria-label="Atualizar">
+              <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v6h-6" /></svg>
+            </button>
+
+            <button id="edit-dashboard-toggle" class="view-toggle hidden" type="button" aria-pressed="false" title="Editar dashboard">
+              <i aria-hidden="true"></i>
+              <span>Visualizar</span>
+              <span>Editar</span>
+            </button>
+
+            <button id="theme-toggle" class="icon-button" type="button" title="Alternar tema" aria-label="Alternar tema">
+              <span id="theme-toggle-icon" class="theme-icon" aria-hidden="true">☀</span>
+            </button>
+          </div>
+        </header>
+
+        <main class="page-content">
+          <section class="kpi-grid" aria-label="Indicadores principais">
+            <article class="kpi-card kpi-total-card">
+              <div class="kpi-head">
+                <span>Processamentos</span>
+                <i class="kpi-icon" aria-hidden="true">$</i>
+              </div>
+              <strong id="kpi-total">0</strong>
+              <em id="kpi-total-sub">- vs periodo anterior</em>
+            </article>
+            <article class="kpi-card kpi-success-card">
+              <div class="kpi-head">
+                <span>Sucesso</span>
+                <i class="kpi-icon" aria-hidden="true">↗</i>
+              </div>
+              <strong id="kpi-success">0</strong>
+              <em id="kpi-success-sub">- vs periodo anterior</em>
+            </article>
+            <article class="kpi-card kpi-error-card">
+              <div class="kpi-head">
+                <span>Erros</span>
+                <i class="kpi-icon" aria-hidden="true">↘</i>
+              </div>
+              <strong id="kpi-errors">0</strong>
+              <em id="kpi-errors-sub">- vs periodo anterior</em>
+            </article>
+            <article class="kpi-card kpi-reprocess-card">
+              <div class="kpi-head">
+                <span>Reprocessamentos</span>
+                <i class="kpi-icon" aria-hidden="true">↳</i>
+              </div>
+              <strong id="kpi-reprocess">0</strong>
+              <em id="kpi-reprocess-sub">- vs periodo anterior</em>
+            </article>
+          </section>
+
+          <section id="metrics-builder" class="metrics-builder hidden" aria-label="Metricas customizadas">
+            <div class="section-header">
+              <div>
+                <h2>Metricas customizadas</h2>
+                <p>Widgets editaveis para acompanhar processamentos, falhas e reprocessamentos.</p>
+              </div>
+              <span id="dashboard-edit-hint">Modo visualizacao</span>
+            </div>
+            <div id="metrics-grid" class="metrics-grid"></div>
+          </section>
+
+          <section class="analytics-grid">
+            <article class="panel chart-panel">
+              <div class="section-header">
+                <div>
+                  <h2>Quantidade de processamentos por hora</h2>
+                  <p id="chart-subtitle">Ultimas 24 horas</p>
+                </div>
+                <span id="chart-peak">-</span>
+              </div>
+              <div class="chart-wrap">
+                <canvas id="hourly-chart"></canvas>
+              </div>
+            </article>
+
+            <article class="panel top-workflows-panel">
+              <div class="section-header">
+                <div>
+                  <h2>Top 6 por workflow</h2>
+                  <p>Quantidade de processamentos</p>
+                </div>
+              </div>
+              <div id="workflow-top-list" class="workflow-top-list"></div>
+            </article>
+          </section>
+
+          <section class="panel process-panel">
+            <div class="trace-toolbar">
+              <div>
+                <h2>Registros de processamento</h2>
+                <p id="process-summary">-</p>
+              </div>
+              <div class="search-box">
+                <input id="process-filter" type="search" placeholder="correlation_id:valor, status:failed, workflow:nome" />
+                <button id="process-search" type="button">Buscar</button>
+              </div>
+            </div>
+
+            <div class="process-table-head" aria-hidden="true">
+              <span>Trace / Correlation</span>
+              <span>Workflow</span>
+              <span>Tempo</span>
+              <span>Etapas</span>
+              <span>Status</span>
+              <span>Data</span>
+            </div>
+            <div class="process-list" id="process-list"></div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <aside id="config-modal" class="settings-panel" aria-hidden="true">
+      <form method="dialog" class="settings-shell">
+        <header>
+          <div>
+            <h2>Settings</h2>
+            <p>Conexao usada para consultar as metricas.</p>
+          </div>
+          <button class="plain-button settings-close" value="cancel" aria-label="Fechar" type="button">x</button>
+        </header>
+        <section class="settings-content">
+          <label>
+            URL da API
+            <input id="api-url" type="url" placeholder="http://localhost:8080" />
+          </label>
+          <label>
+            Senha ou token
+            <input id="api-key" type="password" placeholder="Opcional" autocomplete="current-password" />
+          </label>
+          <label>
+            Atualizacao
+            <select id="refresh-interval">
+              <option value="0">Manual</option>
+              <option value="5000">5 segundos</option>
+              <option value="10000">10 segundos</option>
+              <option value="30000">30 segundos</option>
+              <option value="60000">1 minuto</option>
+            </select>
+          </label>
+          <label class="settings-check">
+            <input id="show-custom-metrics" type="checkbox" />
+            <span>
+              Mostrar metricas customizadas
+              <small>Exibe o construtor de widgets no Overview.</small>
+            </span>
+          </label>
+        </section>
+        <footer>
+          <button id="save-config" class="primary-button" value="default" type="button">Salvar</button>
+        </footer>
+      </form>
+    </aside>
+
+    <aside id="widget-palette" class="widget-palette" aria-hidden="true">
+      <header>
+        <div>
+          <h2>Adicionar elemento</h2>
+          <p>Arraste para o grid de metricas.</p>
+        </div>
+      </header>
+      <div id="widget-palette-list" class="widget-palette-list"></div>
+    </aside>
+
+    <dialog id="widget-editor-modal" class="modal widget-editor-modal">
+      <form method="dialog" class="modal-shell">
+        <header class="modal-header">
+          <div>
+            <h2 id="widget-editor-title">Editar widget</h2>
+            <p>Configure a consulta e visualize o resultado antes de salvar.</p>
+          </div>
+          <button id="widget-editor-close" class="plain-button" value="cancel" type="submit" aria-label="Fechar">x</button>
+        </header>
+        <section class="modal-content widget-editor-content">
+          <div class="widget-editor-grid">
+            <label>
+              Titulo
+              <input id="widget-title-input" type="text" placeholder="Processamentos com sucesso" />
+            </label>
+            <label>
+              Tipo
+              <select id="widget-type-input">
+                <option value="bar">Bar chart</option>
+                <option value="pie">Pie chart</option>
+                <option value="point">Point plot</option>
+                <option value="query_value">Query value</option>
+                <option value="table">Table</option>
+                <option value="timeseries">Timeseries</option>
+                <option value="top_list">Top list</option>
+              </select>
+            </label>
+          </div>
+          <label class="query-editor-field">
+            Query
+            <textarea id="widget-query-input" spellcheck="false" placeholder="count:processes{status:completed}.rollup(count, 60)"></textarea>
+          </label>
+          <div class="query-help">
+            Exemplos: <code>count:processes{*}</code>, <code>count:processes{status:failed}</code>, <code>count:reprocesses{*}</code>, <code>avg:duration_ms{status:completed}</code>, <code>top:workflow{status:failed}</code>
+          </div>
+          <section class="widget-preview">
+            <header>
+              <strong>Preview</strong>
+              <button id="widget-preview-refresh" type="button">Atualizar preview</button>
+            </header>
+            <div id="widget-preview-body"></div>
+          </section>
+        </section>
+        <footer class="modal-footer">
+          <button id="widget-save" class="primary-button" value="default" type="submit">Salvar</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id="process-modal" class="modal process-modal">
+      <div class="modal-shell process-modal-shell">
+        <header class="modal-header process-modal-header">
+          <div class="process-modal-title-row">
+            <div class="modal-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h9" /></svg>
+            </div>
+            <div>
+              <h2 id="modal-title">Processo</h2>
+              <p id="modal-copy">-</p>
+            </div>
+            <span id="modal-status-pill" class="status running">Em andamento</span>
+          </div>
+          <button id="modal-close" class="plain-button" type="button" aria-label="Fechar">x</button>
+        </header>
+        <section id="modal-body" class="modal-content process-modal-content"></section>
+      </div>
+    </dialog>
+
+    <script src="./app.js?v=20260617-14"></script>
+  </body>
+</html>

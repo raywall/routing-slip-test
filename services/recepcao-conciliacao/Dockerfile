@@ -4,13 +4,13 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/service-mcp ./cmd/mcp
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/product .
 
 FROM alpine:3.22
 
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
-COPY --from=build /out/service-mcp /app/service-mcp
+COPY --from=build /out/product /app/product
 COPY config.yaml workflow.yaml /app/
-EXPOSE 9091
-ENTRYPOINT ["/app/service-mcp"]
+EXPOSE 8088 9098
+ENTRYPOINT ["/app/product"]

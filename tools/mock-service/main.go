@@ -15,7 +15,7 @@ import (
 
 func main() {
 	logger := log.New(os.Stdout, "mock-service ", log.LstdFlags|log.Lmicroseconds)
-	addr := env("MOCK_SERVICE_ADDR", ":8079")
+	addr := env("MOCK_SERVICE_ADDR", ":4300")
 	dataPath := env("MOCK_SERVICE_DATA", "/data/mocks.json")
 
 	repo, err := store.NewFileRepository(dataPath)

@@ -31,12 +31,12 @@ help:
 	@printf "  make test           Executa testes Go e valida o compose\n"
 
 prepare:
-	@$(COMPOSE) up -d --wait localstack kafka
+	@$(COMPOSE) up -d --wait localstack kafka-broker
 	@$(COMPOSE) exec -T localstack /bin/sh /scripts/localstack-init.sh
-	@$(COMPOSE) exec -T kafka /bin/sh /scripts/kafka-init.sh
+	@$(COMPOSE) exec -T kafka-broker /bin/sh /scripts/kafka-init.sh
 
 build:
-	@$(COMPOSE) build metrics-service acl-service service-mcp product-service agent-service routing-slip-lambda mock-service
+	@$(COMPOSE) build metrics-service acl-graphql-service service-recepcao-conciliacao service-produto-clt agent-service metrics-webview mock-service
 
 test:
 	@cd metrics && GOWORK=off go test ./... && GOWORK=off go vet ./...
@@ -49,7 +49,7 @@ test:
 
 start: prepare
 	@EXTERNAL_API_URL="$(EXTERNAL_API_URL)" EXTERNAL_API_SERIAL="$(EXTERNAL_API_SERIAL)" \
-		$(COMPOSE) up -d --build --wait metrics-service acl-service metrics-webview mock-service service-mcp product-service agent-service routing-slip-lambda
+		$(COMPOSE) up -d --build --wait kafka-broker metrics-service acl-graphql-service metrics-webview mock-service service-recepcao-conciliacao service-produto-clt agent-service
 	@$(MAKE) health
 
 health:
@@ -57,7 +57,6 @@ health:
 	@curl --fail --silent http://localhost:8090/graphql >/dev/null && echo "acl ECS:     ok"
 	@curl --fail --silent http://localhost:4200 >/dev/null && echo "webview ECS: ok"
 	@curl --fail --silent http://localhost:8079/health >/dev/null && echo "mock ECS:    ok"
-	@curl --fail --silent http://localhost:9091/health >/dev/null && echo "service MCP: ok"
 	@curl --fail --silent http://localhost:8087/health >/dev/null && echo "product ECS: ok"
 	@curl --fail --silent http://localhost:8095/health >/dev/null && echo "agent ECS:   ok"
 	@code=$$(curl --silent --output /dev/null --write-out '%{http_code}' "$(LAMBDA_URL)" -H 'content-type: application/json' --data '{}' || true); \
@@ -81,8 +80,8 @@ publish-sns:
 
 produce-kafka:
 	@test -f "$(PAYLOAD)" || (echo "Payload nao encontrado: $(PAYLOAD)"; exit 1)
-	@cat "$(PAYLOAD)" | $(COMPOSE) exec -T kafka /opt/kafka/bin/kafka-console-producer.sh \
-		--bootstrap-server kafka:9092 \
+	@cat "$(PAYLOAD)" | $(COMPOSE) exec -T kafka-broker /opt/kafka/bin/kafka-console-producer.sh \
+		--bootstrap-server kafka-broker:9092 \
 		--topic "$(KAFKA_TOPIC)"
 
 queues:
@@ -99,7 +98,7 @@ explain:
 		--data '{"target":"product","correlation_id":"$(CORRELATION_ID)","question":"O que aconteceu com este processamento e em que etapa ele terminou?"}'
 
 logs:
-	@$(COMPOSE) logs -f localstack kafka metrics-service acl-service metrics-webview mock-service service-mcp product-service agent-service routing-slip-lambda
+	@$(COMPOSE) logs -f localstack kafka-broker metrics-service acl-graphql-service metrics-webview mock-service service-recepcao-conciliacao service-produto-clt agent-service
 
 stop:
 	@$(COMPOSE) down --remove-orphans

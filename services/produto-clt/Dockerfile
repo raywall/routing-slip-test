@@ -12,5 +12,5 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=build /out/product /app/product
 COPY config.yaml workflow.yaml /app/
-EXPOSE 8087 9094
+EXPOSE 8087 9097
 ENTRYPOINT ["/app/product"]

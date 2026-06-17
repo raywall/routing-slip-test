@@ -14,5 +14,5 @@ COPY --from=build /out/acl /app/acl
 COPY config /app/config
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
-EXPOSE 8090
+EXPOSE 8090 8092
 ENTRYPOINT ["/app/entrypoint.sh"]

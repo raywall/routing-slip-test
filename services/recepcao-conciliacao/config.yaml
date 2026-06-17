@@ -1,6 +1,5 @@
 service:
-  name: product-processing-sqs
-  run_id: sample-test-product
+  name: recepcao-conciliacao
 
 rest:
   addr: ":8087"
@@ -8,13 +7,13 @@ rest:
 
 mcp:
   enabled: true
-  addr: ":9094"
+  addr: ":9097"
 
 state_store:
   type: dynamodb
   table: routing-slip-state
   region: us-east-1
-  endpoint: ${PRODUCT_SQS_ENDPOINT:-http://localhost:4566}
+  endpoint: ${AWS_ENDPOINT_URL:-http://localhost:4566}
 
 idempotency:
   enabled: true

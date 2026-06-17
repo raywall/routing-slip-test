@@ -12,5 +12,5 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=build /out/mock-service /app/mock-service
 RUN mkdir -p /data
-EXPOSE 8079
+EXPOSE 4300
 ENTRYPOINT ["/app/mock-service"]

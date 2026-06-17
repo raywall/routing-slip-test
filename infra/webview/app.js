@@ -19,11 +19,13 @@ const state = {
     rangeFrom: "",
     rangeTo: "",
     refreshInterval: 5000,
-    theme: "light",
+    showCustomMetrics: false,
+    theme: "dark",
   },
   timer: null,
   events: [],
   processes: [],
+  previousProcesses: [],
   chartProcesses: [],
   editMode: false,
   widgets: [],
@@ -40,6 +42,7 @@ const els = {
   rangeFrom: document.querySelector("#range-from"),
   rangeTo: document.querySelector("#range-to"),
   refreshInterval: document.querySelector("#refresh-interval"),
+  showCustomMetrics: document.querySelector("#show-custom-metrics"),
   refreshNow: document.querySelector("#refresh-now"),
   themeToggle: document.querySelector("#theme-toggle"),
   themeToggleIcon: document.querySelector("#theme-toggle-icon"),
@@ -55,11 +58,22 @@ const els = {
   processFilter: document.querySelector("#process-filter"),
   processSearch: document.querySelector("#process-search"),
   processList: document.querySelector("#process-list"),
+  kpiTotal: document.querySelector("#kpi-total"),
+  kpiSuccess: document.querySelector("#kpi-success"),
+  kpiErrors: document.querySelector("#kpi-errors"),
+  kpiReprocess: document.querySelector("#kpi-reprocess"),
+  kpiTotalSub: document.querySelector("#kpi-total-sub"),
+  kpiSuccessSub: document.querySelector("#kpi-success-sub"),
+  kpiErrorsSub: document.querySelector("#kpi-errors-sub"),
+  kpiReprocessSub: document.querySelector("#kpi-reprocess-sub"),
+  chartPeak: document.querySelector("#chart-peak"),
+  workflowTopList: document.querySelector("#workflow-top-list"),
   processModal: document.querySelector("#process-modal"),
   modalClose: document.querySelector("#modal-close"),
   modalTitle: document.querySelector("#modal-title"),
   modalCopy: document.querySelector("#modal-copy"),
   modalBody: document.querySelector("#modal-body"),
+  modalStatusPill: document.querySelector("#modal-status-pill"),
   editDashboardToggle: document.querySelector("#edit-dashboard-toggle"),
   dashboardEditHint: document.querySelector("#dashboard-edit-hint"),
   metricsGrid: document.querySelector("#metrics-grid"),
@@ -88,7 +102,9 @@ function loadSettings() {
   els.rangeFrom.value = state.settings.rangeFrom;
   els.rangeTo.value = state.settings.rangeTo;
   els.refreshInterval.value = String(state.settings.refreshInterval);
+  els.showCustomMetrics.checked = Boolean(state.settings.showCustomMetrics);
   syncRangeControls();
+  syncCustomMetricsVisibility();
   applyTheme(state.settings.theme);
 }
 
@@ -135,24 +151,30 @@ function saveSettings() {
     rangeFrom: els.rangeFrom.value,
     rangeTo: els.rangeTo.value,
     refreshInterval: Number(els.refreshInterval.value),
-    theme: state.settings.theme || "light",
+    showCustomMetrics: Boolean(els.showCustomMetrics.checked),
+    theme: state.settings.theme || "dark",
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
   scheduleRefresh();
+  syncCustomMetricsVisibility();
 }
 
 function applyTheme(theme) {
-  const normalized = theme === "dark" ? "dark" : "light";
+  const normalized = theme === "light" ? "light" : "dark";
   state.settings.theme = normalized;
-  document.body.classList.toggle("theme-dark", normalized === "dark");
+  document.body.classList.toggle("theme-light", normalized === "light");
   if (els.themeToggleIcon) {
-    els.themeToggleIcon.innerHTML = normalized === "dark" ? "&#9788;" : "&#9790;";
+    els.themeToggleIcon.textContent = normalized === "dark" ? "☀" : "☾";
   }
   if (els.themeToggle) {
     const label = normalized === "dark" ? "Ativar tema claro" : "Ativar tema escuro";
     els.themeToggle.setAttribute("title", label);
     els.themeToggle.setAttribute("aria-label", label);
   }
+  requestAnimationFrame(() => {
+    renderHourlyChart();
+    renderWidgets();
+  });
 }
 
 function normalizeBaseURL(value) {
@@ -196,14 +218,25 @@ function timeWindow() {
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
+function previousTimeWindow(window) {
+  const to = new Date(window.from);
+  const from = new Date(to.getTime() - Math.max(60_000, new Date(window.to) - new Date(window.from)));
+  return { from: from.toISOString(), to: to.toISOString() };
+}
+
 async function refreshData() {
   saveSettings();
   try {
     const window = timeWindow();
+    const previousWindow = previousTimeWindow(window);
     const chartWindow = hourlyChartWindow();
-    const [records, chartRecords] = await Promise.all([
+    const [records, previousRecords, chartRecords] = await Promise.all([
       getJSON("/v1/metrics/events", {
         ...window,
+        limit: 1000,
+      }),
+      getJSON("/v1/metrics/events", {
+        ...previousWindow,
         limit: 1000,
       }),
       getJSON("/v1/metrics/events", {
@@ -213,6 +246,7 @@ async function refreshData() {
     ]);
     state.events = records.map((record) => record.event || record);
     state.processes = groupProcessEvents(records);
+    state.previousProcesses = groupProcessEvents(previousRecords);
     state.chartProcesses = groupProcessEvents(chartRecords);
     setStatus(true);
     renderAll();
@@ -319,10 +353,53 @@ function renderAll() {
   const window = timeWindow();
   els.lastUpdate.textContent = `Atualizado ${formatDateTime(new Date().toISOString())}`;
   const chartWindow = hourlyChartWindow();
-  els.chartSubtitle.textContent = `Ultimas 24 horas: ${formatDateTime(chartWindow.from)} - ${formatDateTime(chartWindow.to)}`;
+  els.chartSubtitle.textContent = `Ultimas 24 horas`;
+  renderKpis();
   renderHourlyChart();
+  renderTopWorkflows();
   renderWidgets();
   renderProcesses();
+}
+
+function renderKpis() {
+  const current = kpiSnapshot(state.processes);
+  const previous = kpiSnapshot(state.previousProcesses);
+  setKpi(els.kpiTotal, els.kpiTotalSub, current.total, previous.total);
+  setKpi(els.kpiSuccess, els.kpiSuccessSub, current.success, previous.success);
+  setKpi(els.kpiErrors, els.kpiErrorsSub, current.failed, previous.failed, { lowerIsBetter: true });
+  setKpi(els.kpiReprocess, els.kpiReprocessSub, current.reprocesses, previous.reprocesses, { lowerIsBetter: true });
+}
+
+function kpiSnapshot(processes) {
+  return {
+    total: processes.length,
+    success: processes.filter((item) => item.status === "completed").length,
+    failed: processes.filter((item) => item.status === "failed" || item.status === "stopped").length,
+    reprocesses: processes.filter(isReprocess).length,
+  };
+}
+
+function setKpi(valueElement, trendElement, current, previous, options = {}) {
+  valueElement.textContent = formatMetricNumber(current);
+  const trend = kpiTrend(current, previous, options);
+  trendElement.className = `kpi-trend ${trend.direction} ${trend.tone}`;
+  trendElement.innerHTML = `<span>${escapeHTML(trend.icon)} ${escapeHTML(trend.value)}</span> <small>vs periodo anterior</small>`;
+}
+
+function kpiTrend(current, previous, options = {}) {
+  if (!previous && !current) return { direction: "neutral", tone: "neutral", icon: "→", value: "0%" };
+  if (!previous) return { direction: "up", tone: options.lowerIsBetter ? "bad" : "good", icon: "↗", value: "+100%" };
+  const delta = current - previous;
+  const percent = (delta / previous) * 100;
+  const sign = percent > 0 ? "+" : "";
+  const direction = delta > 0 ? "up" : delta < 0 ? "down" : "neutral";
+  const improved = options.lowerIsBetter ? delta < 0 : delta > 0;
+  return {
+    direction,
+    tone: delta === 0 ? "neutral" : improved ? "good" : "bad",
+    icon: delta > 0 ? "↗" : delta < 0 ? "↘" : "→",
+    value: `${sign}${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(percent)}%`,
+  };
 }
 
 function renderWidgetPalette() {
@@ -465,37 +542,83 @@ function renderHourlyChart() {
   const canvas = els.hourlyChart;
   const context = prepareCanvas(canvas);
   const rect = canvas.getBoundingClientRect();
-  const pad = { top: 18, right: 18, bottom: 34, left: 44 };
+  const pad = { top: 18, right: 18, bottom: 34, left: 48 };
   const width = rect.width - pad.left - pad.right;
   const height = rect.height - pad.top - pad.bottom;
   context.clearRect(0, 0, rect.width, rect.height);
-  drawGrid(context, pad, width, height);
+  drawChartArea(context, pad, width, height);
+  drawDashedGrid(context, pad, width, height);
 
   if (buckets.length === 0) {
-    context.fillStyle = "#687782";
+    context.fillStyle = cssVar("--muted");
     context.fillText("Sem processamentos nas ultimas 24h", pad.left + 8, pad.top + 24);
+    els.chartPeak.textContent = "Sem pico";
+    els.chartSubtitle.textContent = "Ultimas 24 horas - 0 total";
     return;
   }
 
-  const max = Math.max(...buckets.map((bucket) => bucket.value), 1);
-  const gap = Math.max(4, Math.min(12, width / Math.max(buckets.length, 1) * 0.18));
-  const barWidth = Math.max(8, (width - gap * (buckets.length - 1)) / buckets.length);
+  const peakValue = Math.max(...buckets.map((bucket) => bucket.value), 1);
+  const max = Math.max(1, Math.ceil(peakValue * 1.18));
+  const peak = buckets.find((bucket) => bucket.value === peakValue);
+  const total = buckets.reduce((sum, bucket) => sum + bucket.value, 0);
+  els.chartSubtitle.textContent = `Ultimas 24 horas - ${formatMetricNumber(total)} total`;
+  els.chartPeak.textContent = `Peak: ${peakValue} @ ${peak?.label || "-"}`;
 
-  buckets.forEach((bucket, index) => {
-    const x = pad.left + index * (barWidth + gap);
-    const barHeight = (bucket.value / max) * height;
-    const y = pad.top + height - barHeight;
-    context.fillStyle = bucket.failed > 0 ? "#d83b3b" : "#6bb8ff";
-    context.fillRect(x, y, barWidth, barHeight);
-    if (index % Math.ceil(buckets.length / 8) === 0 || buckets.length <= 8) {
-      context.fillStyle = "#687782";
-      context.fillText(bucket.label, x, pad.top + height + 20);
+  const points = buckets.map((bucket, index) => ({
+    x: pad.left + (width / Math.max(buckets.length - 1, 1)) * index,
+    y: pad.top + height - (bucket.value / max) * height,
+    label: bucket.label,
+    value: bucket.value,
+  }));
+
+  const areaGradient = context.createLinearGradient(0, pad.top, 0, pad.top + height);
+  areaGradient.addColorStop(0, "rgba(59,154,240,.18)");
+  areaGradient.addColorStop(1, "rgba(59,154,240,0)");
+  context.beginPath();
+  context.moveTo(points[0].x, pad.top + height);
+  drawSmoothPath(context, points);
+  context.lineTo(points.at(-1).x, pad.top + height);
+  context.closePath();
+  context.fillStyle = areaGradient;
+  context.fill();
+
+  context.beginPath();
+  drawSmoothPath(context, points);
+  context.strokeStyle = cssVar("--blue");
+  context.lineWidth = 1.35;
+  context.stroke();
+
+  context.fillStyle = cssVar("--muted");
+  [0, Math.round(max * 0.25), Math.round(max * 0.5), Math.round(max * 0.75), max].forEach((value, index) => {
+    const y = pad.top + height - (height / 4) * index;
+    context.fillText(String(value), 12, y + 4);
+  });
+  points.forEach((point, index) => {
+    if (index % 3 === 0 || index === points.length - 1) {
+      context.fillText(point.label.replace(":00", "h"), point.x - 8, pad.top + height + 20);
     }
   });
+}
 
-  context.fillStyle = "#35424a";
-  context.fillText(String(max), 8, pad.top + 5);
-  context.fillText("0", 16, pad.top + height + 4);
+function renderTopWorkflows() {
+  const rows = topRows(state.processes, "workflow").slice(0, 6);
+  const paddedRows = [...rows];
+  while (paddedRows.length < 6) paddedRows.push({ label: "", value: 0, empty: true });
+  const max = Math.max(...rows.map((row) => row.value), 1);
+  els.workflowTopList.innerHTML = paddedRows.map((row) => `
+    <div class="workflow-top-row ${row.empty ? "empty-workflow-row" : ""}">
+      <strong title="${escapeHTML(row.label)}">${escapeHTML(row.label)}</strong>
+      <div class="workflow-bar"><i style="width:${row.empty ? 0 : Math.max(9, (row.value / max) * 100)}%"></i></div>
+      <span>${row.empty ? "" : escapeHTML(formatMetricNumber(row.value))}</span>
+    </div>
+  `).join("") + `
+    <div class="workflow-scale" aria-hidden="true">
+      <span>0</span>
+      <span>${escapeHTML(formatMetricNumber(Math.round(max / 3)))}</span>
+      <span>${escapeHTML(formatMetricNumber(Math.round((max / 3) * 2)))}</span>
+      <span>${escapeHTML(formatMetricNumber(max))}</span>
+    </div>
+  `;
 }
 
 function hourlyBuckets(processes) {
@@ -531,7 +654,7 @@ function renderProcesses() {
   els.processSummary.textContent = `${filtered.length} processos, ${completed} concluidos, ${failed} falhas, ${running} em execucao`;
 
   if (filtered.length === 0) {
-    els.processList.innerHTML = `<tr><td colspan="8" class="empty">Nenhum processamento encontrado no periodo.</td></tr>`;
+    els.processList.innerHTML = `<div class="empty">Nenhum processamento encontrado no periodo.</div>`;
     return;
   }
 
@@ -542,25 +665,25 @@ function renderProcesses() {
 }
 
 function processRow(group) {
-  const tags = group.tags || {};
-  const chipKeys = ["order_id", "pedido_id", "customer_id", "id_cliente", "event_id", "trace_id"];
-  const chips = chipKeys
-    .filter((key) => tags[key])
-    .slice(0, 3)
-    .map((key) => `<span>${escapeHTML(key)}:${escapeHTML(tags[key])}</span>`)
-    .join("");
+  const traceOrCorrelation = group.traceId && group.traceId !== "-" ? group.traceId : group.correlationId;
+  const change = processChangeLabel(group);
   return `
-    <tr data-process-id="${escapeHTML(group.id)}">
-      <td><time>${escapeHTML(formatDateTime(group.updatedAt))}</time></td>
-      <td><strong>${escapeHTML(group.workflow)}</strong></td>
-      <td><code>${escapeHTML(group.correlationId)}</code></td>
-      <td><code>${escapeHTML(group.messageId)}</code></td>
-      <td>${escapeHTML(formatDuration(group.durationMs))}</td>
-      <td>${group.completed}/${group.expectedSteps}</td>
-      <td><span class="status ${group.status}">${escapeHTML(statusLabel(group.status))}</span></td>
-      <td><div class="tag-list">${chips || `<span>trace:${escapeHTML(group.traceId)}</span>`}</div></td>
-    </tr>
+    <button class="process-row" type="button" data-process-id="${escapeHTML(group.id)}">
+      <code class="process-id-cell" title="${escapeHTML(traceOrCorrelation)}">${escapeHTML(shortIdentifier(traceOrCorrelation))}</code>
+      <span class="process-workflow-cell" title="${escapeHTML(group.workflow)}">${escapeHTML(group.workflow)}</span>
+      <span class="duration-cell">${escapeHTML(formatDuration(group.durationMs))}</span>
+      <span class="process-change ${change.tone}">${escapeHTML(change.icon)} ${escapeHTML(change.label)}</span>
+      <span class="status ${group.status}">${escapeHTML(statusLabel(group.status))}</span>
+      <time>${escapeHTML(formatDateOnly(group.updatedAt))}</time>
+    </button>
   `;
+}
+
+function processChangeLabel(group) {
+  if (group.status === "failed") return { tone: "bad", icon: "↘", label: `${group.failed || 1} falha(s)` };
+  if (group.status === "stopped") return { tone: "warn", icon: "→", label: `${group.remaining} faltante(s)` };
+  if (group.status === "running") return { tone: "warn", icon: "→", label: `${group.completed}/${group.expectedSteps}` };
+  return { tone: "good", icon: "↗", label: `${group.completed}/${group.expectedSteps}` };
 }
 
 function filterProcesses(processes, rawFilter) {
@@ -595,50 +718,52 @@ function openProcess(id) {
   if (!process) return;
   els.modalTitle.textContent = process.workflow;
   els.modalCopy.textContent = `${process.correlationId} - ${statusLabel(process.status)} - ${formatDuration(process.durationMs)}`;
+  els.modalStatusPill.className = `status ${process.status}`;
+  els.modalStatusPill.textContent = statusLabel(process.status);
   const metadata = [
+    ["Workflow", process.workflow],
+    ["Status", statusLabel(process.status)],
     ["Correlation ID", process.correlationId],
     ["Trace ID", process.traceId],
     ["Message ID", process.messageId],
-    ["Resultado", statusLabel(process.status)],
     ["Inicio", formatDateTime(process.startedAt)],
     ["Fim", formatDateTime(process.updatedAt)],
-    ["Duracao", formatDuration(process.durationMs)],
-    ["Etapas", `${process.completed}/${process.expectedSteps}`],
+    ["Tempo total", formatDuration(process.durationMs)],
   ];
   const tagEntries = Object.entries(process.tags || {}).sort(([a], [b]) => a.localeCompare(b));
+  const steps = processSteps(process);
   els.modalBody.innerHTML = `
-    <section class="process-overview">
-      <section class="process-kpis">
-        <div><strong>${process.completed}</strong><span>Concluidas</span></div>
-        <div><strong>${process.failed}</strong><span>Falhas</span></div>
-        <div><strong>${process.stopped}</strong><span>Paradas</span></div>
-        <div><strong>${process.remaining}</strong><span>Faltantes</span></div>
-      </section>
-      <section class="modal-meta-section">
-        <div class="modal-section-title">
-          <h3>Resumo do processamento</h3>
-          <p>Identificadores e dados gerais desta execucao.</p>
-        </div>
-        <div class="modal-meta-grid">
-          ${metadata.map(([label, value]) => metaItem(label, value)).join("")}
-        </div>
-      </section>
-      <section class="modal-meta-section">
-        <div class="modal-section-title">
-          <h3>Tags capturadas</h3>
-          <p>Atributos coletados para busca, correlacao e observabilidade.</p>
-        </div>
-        <div class="modal-meta-grid modal-meta-grid-tags">
-          ${tagEntries.length ? tagEntries.map(([key, value]) => metaItem(key, value)).join("") : `<div class="modal-meta-item"><span class="modal-meta-label">Tags</span><strong class="modal-meta-value">Nenhuma tag registrada</strong></div>`}
-        </div>
-      </section>
+    <section class="process-attribute-grid">
+      ${metadata.map(([label, value]) => metaItem(label, value)).join("")}
+      <div class="process-attribute-steps">
+        <span>Etapas</span>
+        <strong>${process.completed}/${process.expectedSteps}</strong>
+      </div>
+    </section>
+    <section class="process-step-strip">
+      <p>Etapas de processamento</p>
+      <span>${steps.length} etapa(s) - ${escapeHTML(formatDuration(process.durationMs))} total</span>
+      <span>${process.failed} erro(s)</span>
+    </section>
+    <section class="step-table-head" aria-hidden="true">
+      <span>#</span>
+      <span>Data / hora</span>
+      <span>Tipo de etapa</span>
+      <span>Duração</span>
+      <span>Status</span>
+      <span></span>
     </section>
     <section class="step-list">
-      ${processSteps(process).map((step, index) => stepItem(step, index)).join("")}
+      ${steps.map((step, index) => stepItem(step, index)).join("")}
     </section>
+    <footer class="process-modal-footer">
+      <span>Trace: <strong>${escapeHTML(process.traceId)}</strong></span>
+      <span>Correlation: <strong>${escapeHTML(process.correlationId)}</strong></span>
+      ${tagEntries.length ? `<span>${tagEntries.length} tag(s) capturada(s)</span>` : ""}
+    </footer>
   `;
-  els.modalBody.querySelectorAll("[data-step-index]").forEach((item) => {
-    item.addEventListener("click", () => item.classList.toggle("open"));
+  els.modalBody.querySelectorAll("[data-step-index]").forEach((button) => {
+    button.addEventListener("click", () => button.closest(".step-item")?.classList.toggle("open"));
   });
   els.processModal.showModal();
 }
@@ -683,22 +808,24 @@ function processSteps(process) {
 
 function stepItem(step, index) {
   return `
-    <article class="step-item ${step.status}" data-step-index="${index}">
-      <div class="step-summary">
+    <article class="step-item ${step.status}">
+      <button class="step-summary" type="button" data-step-index="${index}">
+        <span class="step-index">${String(index + 1).padStart(2, "0")}</span>
         <time>${escapeHTML(formatDateTime(step.startedAt))}</time>
-        <div>
+        <span class="step-name">
           <strong>${escapeHTML(step.step)}</strong>
-          <p>${escapeHTML(step.handler)} - ${escapeHTML(step.duration || "-")}</p>
-        </div>
+          <span>${escapeHTML(step.handler)}</span>
+        </span>
+        <span class="step-duration">${escapeHTML(step.duration || "-")}</span>
         <span class="status ${step.status}">${escapeHTML(statusLabel(step.status))}</span>
-      </div>
-      <dl class="step-details">
-        <div><dt>Valor de entrada</dt><dd>${formatDetail(step.input)}</dd></div>
-        <div><dt>Regra aplicada</dt><dd>${formatDetail(step.rule)}</dd></div>
-        <div><dt>Valor de saida</dt><dd>${formatDetail(step.output)}</dd></div>
-        <div><dt>Status</dt><dd><span class="detail-text">${escapeHTML(statusLabel(step.status))}</span></dd></div>
-        <div><dt>Motivo da falha</dt><dd>${formatDetail(step.failure || "-")}</dd></div>
-      </dl>
+        <span class="chevron">›</span>
+      </button>
+      <section class="step-details">
+        <div class="step-detail-block"><h3>Input</h3>${formatDetail(step.input)}</div>
+        <div class="step-detail-block"><h3>Regra aplicada</h3>${formatDetail(step.rule)}</div>
+        <div class="step-detail-block"><h3>Output</h3>${formatDetail(step.output)}</div>
+        <div class="step-detail-block"><h3>Erro</h3>${formatDetail(step.failure || "sem erros", step.failure ? "error-box" : "")}</div>
+      </section>
     </article>
   `;
 }
@@ -707,6 +834,13 @@ function syncRangeControls() {
   const visible = els.rangeMode.value === "custom";
   els.customRange.hidden = !visible;
   els.customRange.classList.toggle("visible", visible);
+}
+
+function syncCustomMetricsVisibility() {
+  const visible = Boolean(state.settings.showCustomMetrics);
+  document.querySelector("#metrics-builder")?.classList.toggle("hidden", !visible);
+  els.editDashboardToggle?.classList.toggle("hidden", !visible);
+  if (!visible && state.editMode) setDashboardEditMode(false);
 }
 
 function scheduleRefresh() {
@@ -725,9 +859,9 @@ function statusLabel(status) {
   return { completed: "OK", success: "OK", failed: "Erro", stopped: "Parado", running: "Em andamento" }[status] || status || "-";
 }
 
-function formatDetail(value) {
+function formatDetail(value, className = "") {
   if (!value) return "-";
-  return `<pre class="detail-code">${escapeHTML(prettyJSON(value))}</pre>`;
+  return `<pre class="detail-code ${escapeHTML(className)}">${escapeHTML(prettyJSON(value))}</pre>`;
 }
 
 function prettyJSON(value) {
@@ -758,9 +892,9 @@ function normalizeMultilineText(value) {
 
 function metaItem(label, value) {
   return `
-    <div class="modal-meta-item">
-      <span class="modal-meta-label">${escapeHTML(label)}</span>
-      <strong class="modal-meta-value">${escapeHTML(value ?? "-")}</strong>
+    <div>
+      <span>${escapeHTML(label)}</span>
+      <strong title="${escapeHTML(value ?? "-")}">${escapeHTML(value ?? "-")}</strong>
     </div>
   `;
 }
@@ -775,6 +909,22 @@ function formatDateTime(value) {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
+}
+
+function formatDateOnly(value) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value)).replace(".", "");
+}
+
+function shortIdentifier(value) {
+  const text = String(value || "-");
+  if (text.length <= 16) return text;
+  if (/^[0-9a-f]{32}$/i.test(text)) return `${text.slice(0, 8)}...${text.slice(-6)}`;
+  return `${text.slice(0, 10)}...${text.slice(-6)}`;
 }
 
 function formatHour(value) {
@@ -813,8 +963,29 @@ function prepareCanvas(canvas) {
   return context;
 }
 
+function cssVar(name) {
+  const bodyValue = getComputedStyle(document.body).getPropertyValue(name).trim();
+  return bodyValue || getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function percentLabel(value, total) {
+  if (!total) return "0%";
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format((value / total) * 100)}%`;
+}
+
+function roundRect(context, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, Math.abs(width) / 2, Math.abs(height) / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.arcTo(x + width, y, x + width, y + height, safeRadius);
+  context.arcTo(x + width, y + height, x, y + height, safeRadius);
+  context.arcTo(x, y + height, x, y, safeRadius);
+  context.arcTo(x, y, x + width, y, safeRadius);
+  context.closePath();
+}
+
 function drawGrid(context, pad, width, height) {
-  context.strokeStyle = "#e6eaee";
+  context.strokeStyle = cssVar("--line");
   context.lineWidth = 1;
   context.beginPath();
   for (let i = 0; i <= 4; i += 1) {
@@ -823,6 +994,52 @@ function drawGrid(context, pad, width, height) {
     context.lineTo(pad.left + width, y);
   }
   context.stroke();
+}
+
+function drawChartArea(context, pad, width, height) {
+  const gradient = context.createLinearGradient(0, pad.top, 0, pad.top + height);
+  gradient.addColorStop(0, "rgba(59,154,240,.11)");
+  gradient.addColorStop(0.45, "rgba(59,154,240,.045)");
+  gradient.addColorStop(1, "rgba(59,154,240,0)");
+  context.fillStyle = gradient;
+  context.fillRect(pad.left, pad.top, width, height);
+}
+
+function drawDashedGrid(context, pad, width, height) {
+  context.save();
+  context.strokeStyle = colorMix(cssVar("--line"), 0.28);
+  context.lineWidth = 1;
+  context.setLineDash([2, 6]);
+  context.beginPath();
+  for (let i = 0; i <= 4; i += 1) {
+    const y = pad.top + (height / 4) * i;
+    context.moveTo(pad.left, y);
+    context.lineTo(pad.left + width, y);
+  }
+  for (let i = 0; i <= 6; i += 1) {
+    const x = pad.left + (width / 6) * i;
+    context.moveTo(x, pad.top);
+    context.lineTo(x, pad.top + height);
+  }
+  context.stroke();
+  context.restore();
+}
+
+function drawSmoothPath(context, points) {
+  if (!points.length) return;
+  context.moveTo(points[0].x, points[0].y);
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const midpointX = (current.x + next.x) / 2;
+    context.bezierCurveTo(midpointX, current.y, midpointX, next.y, next.x, next.y);
+  }
+}
+
+function colorMix(color, alpha) {
+  if (color.startsWith("rgba")) return color.replace(/rgba\(([^)]+),\s*[^)]+\)/, `rgba($1, ${alpha})`);
+  if (color.startsWith("rgb")) return color.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
+  return color;
 }
 
 function evaluateWidgetQuery(rawQuery, widgetType) {
@@ -950,9 +1167,10 @@ function drawBars(context, rect, series) {
   series.forEach((item, index) => {
     const x = pad.left + index * (barWidth + gap);
     const barHeight = (item.value / max) * height;
-    context.fillStyle = ["#39a66a", "#d83b3b", "#f5a623", "#2f74d0"][index % 4];
-    context.fillRect(x, pad.top + height - barHeight, barWidth, barHeight);
-    context.fillStyle = "#687782";
+    context.fillStyle = [cssVar("--green"), cssVar("--red"), cssVar("--primary"), cssVar("--blue")][index % 4];
+    roundRect(context, x, pad.top + height - barHeight, barWidth, barHeight, 4);
+    context.fill();
+    context.fillStyle = cssVar("--muted");
     context.fillText(String(item.label).slice(0, 8), x, pad.top + height + 17);
   });
 }
@@ -970,7 +1188,7 @@ function drawLine(context, rect, series) {
     if (index === 0) context.moveTo(x, y);
     else context.lineTo(x, y);
   });
-  context.strokeStyle = "#2f74d0";
+  context.strokeStyle = cssVar("--blue");
   context.lineWidth = 2;
   context.stroke();
 }
@@ -984,7 +1202,7 @@ function drawPoints(context, rect, points) {
   points.slice(-80).forEach((item, index, list) => {
     const x = pad.left + (width / Math.max(list.length - 1, 1)) * index;
     const y = pad.top + height - (item.y / max) * height;
-    context.fillStyle = item.status === "failed" ? "#d83b3b" : "#2f74d0";
+    context.fillStyle = item.status === "failed" ? cssVar("--red") : cssVar("--blue");
     context.beginPath();
     context.arc(x, y, 3, 0, Math.PI * 2);
     context.fill();
@@ -999,7 +1217,7 @@ function drawPie(context, rect, series) {
   let start = -Math.PI / 2;
   series.forEach((item, index) => {
     const slice = (item.value / total) * Math.PI * 2;
-    context.fillStyle = ["#39a66a", "#d83b3b", "#f5a623", "#2f74d0", "#8f76b6"][index % 5];
+    context.fillStyle = [cssVar("--green"), cssVar("--red"), cssVar("--primary"), cssVar("--blue"), cssVar("--purple")][index % 5];
     context.beginPath();
     context.moveTo(cx, cy);
     context.arc(cx, cy, radius, start, start + slice);
@@ -1132,9 +1350,21 @@ function escapeHTML(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
 }
 
-els.openConfig.addEventListener("click", () => els.configModal.showModal());
+function openSettingsPanel() {
+  els.configModal.classList.add("open");
+  els.configModal.setAttribute("aria-hidden", "false");
+}
+
+function closeSettingsPanel() {
+  els.configModal.classList.remove("open");
+  els.configModal.setAttribute("aria-hidden", "true");
+}
+
+els.openConfig.addEventListener("click", openSettingsPanel);
+document.querySelector(".settings-close")?.addEventListener("click", closeSettingsPanel);
 els.saveConfig.addEventListener("click", () => {
   saveSettings();
+  closeSettingsPanel();
   refreshData();
 });
 els.refreshNow.addEventListener("click", refreshData);
@@ -1174,10 +1404,13 @@ els.widgetSave.addEventListener("click", saveWidgetEditor);
 [els.widgetTitleInput, els.widgetTypeInput, els.widgetQueryInput].forEach((input) => {
   input.addEventListener("input", renderWidgetPreview);
 });
-[els.processModal, els.configModal, els.widgetEditorModal].forEach((modal) => {
+[els.processModal, els.widgetEditorModal].forEach((modal) => {
   modal.addEventListener("click", (event) => {
     if (event.target === modal) modal.close();
   });
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeSettingsPanel();
 });
 window.addEventListener("resize", () => {
   renderHourlyChart();

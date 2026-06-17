@@ -3,3 +3,4 @@
 .pid_*
 service/.routing-slip-state/
 localstack/
+temp/
